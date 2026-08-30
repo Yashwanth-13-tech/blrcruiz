@@ -408,7 +408,7 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
               <img
                 key={activeCar.image}
                 src={activeCar.image}
-                alt={activeCar.name}
+                alt={`${activeCar.name} self-drive car rental in Bangalore`}
                 className="h-full w-full object-cover transition-all duration-700 animate-fade-in"
                 loading="eager"
                 decoding="async"

@@ -22,6 +22,7 @@ import MobileContactBar from './components/MobileContactBar.jsx'
 import Footer from './components/Footer.jsx'
 import Reveal from './components/Reveal.jsx'
 import LegalTerms from './components/LegalTerms.jsx'
+import SEO from './components/SEO.jsx'
 import { pickupLocations } from './config/business.js'
 
 const FAVORITES_KEY = 'drivora_favorites'
@@ -280,6 +281,7 @@ export default function App() {
   return (
     <AuthProvider>
       <CarProvider>
+        <SEO route={currentRoute} />
         {currentRoute === 'admin' ? (
           <AdminLayout />
         ) : currentRoute === 'terms' ? (

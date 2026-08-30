@@ -116,7 +116,7 @@ export default function CarDetailsModal({ car, search, onClose, onContinueBookin
             <div className="relative h-60 sm:h-72 overflow-hidden rounded-2xl bg-slate-100 border border-slate-200">
               <img
                 src={currentImage}
-                alt={`${car.brand} ${car.model}`}
+                alt={`${car.brand} ${car.model} rental car in Bangalore`}
                 className="h-full w-full object-cover"
               />
 
@@ -126,6 +126,7 @@ export default function CarDetailsModal({ car, search, onClose, onContinueBookin
                   <button
                     type="button"
                     onClick={() => setActiveImgIndex((prev) => (prev > 0 ? prev - 1 : allImages.length - 1))}
+                    aria-label="Previous vehicle image"
                     className="absolute left-2.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/60 text-white hover:bg-slate-900 transition-colors"
                   >
                     <ChevronLeft size={16} />
@@ -133,6 +134,7 @@ export default function CarDetailsModal({ car, search, onClose, onContinueBookin
                   <button
                     type="button"
                     onClick={() => setActiveImgIndex((prev) => (prev < allImages.length - 1 ? prev + 1 : 0))}
+                    aria-label="Next vehicle image"
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/60 text-white hover:bg-slate-900 transition-colors"
                   >
                     <ChevronRight size={16} />
@@ -154,13 +156,14 @@ export default function CarDetailsModal({ car, search, onClose, onContinueBookin
                     key={i}
                     type="button"
                     onClick={() => setActiveImgIndex(i)}
+                    aria-label={`View ${car.brand} ${car.model} photo ${i + 1}`}
                     className={`h-12 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition-all ${
                       activeImgIndex === i
                         ? 'border-accent-500 ring-2 ring-accent-500/30'
                         : 'border-slate-200 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <img src={img} alt="" className="h-full w-full object-cover" />
+                    <img src={img} alt={`${car.brand} ${car.model} photo ${i + 1}`} className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -361,7 +364,7 @@ export default function CarDetailsModal({ car, search, onClose, onContinueBookin
                   key={rc.id}
                   className="flex items-center gap-3 rounded-xl bg-white border border-slate-200 p-2.5 shadow-2xs"
                 >
-                  <img src={rc.image} alt="" className="h-12 w-16 rounded-lg object-cover" />
+                  <img src={rc.image} alt={`${rc.brand} ${rc.model} rental in Bangalore`} className="h-12 w-16 rounded-lg object-cover" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-slate-900 truncate">
                       {rc.brand} {rc.model}

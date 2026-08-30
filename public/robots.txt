@@ -1,4 +1,17 @@
+# BLR CRUIZ | Car Rental Bangalore Robots.txt
+# https://blrcruiz.in
+
 User-agent: *
 Allow: /
+Allow: /terms
+Allow: /assets/
+Allow: /favicon.svg
 
-Sitemap: https://drivora.in/sitemap.xml
+# Prevent search engine indexing of private admin console and internal REST APIs
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /api/*
+
+# Official XML Sitemap
+Sitemap: https://blrcruiz.in/sitemap.xml

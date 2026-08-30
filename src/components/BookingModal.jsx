@@ -459,7 +459,7 @@ Please confirm vehicle availability and handover terms.`
               <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-200 border border-slate-300/60">
                 <img
                   src={selectedCar.image || FALLBACK_CAR_IMAGE}
-                  alt={`${selectedCar.brand} ${selectedCar.model}`}
+                  alt={`${selectedCar.brand} ${selectedCar.model} rental car in Bangalore`}
                   className="h-full w-full object-cover"
                   onError={(e) => {
                     e.currentTarget.src = FALLBACK_CAR_IMAGE

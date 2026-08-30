@@ -502,6 +502,29 @@ const healthHandler = (req, res) => {
 app.get('/api/health', healthHandler)
 app.get('/health', healthHandler)
 
+// Direct SEO route handlers
+app.get('/robots.txt', (req, res) => {
+  const distRobots = path.join(DIST_DIR, 'robots.txt')
+  const publicRobots = path.resolve(__dirname, '../public/robots.txt')
+  const target = fs.existsSync(distRobots) ? distRobots : publicRobots
+  if (fs.existsSync(target)) {
+    res.setHeader('Content-Type', 'text/plain')
+    return res.sendFile(target)
+  }
+  return res.type('text/plain').send("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nSitemap: https://blrcruiz.in/sitemap.xml\n")
+})
+
+app.get('/sitemap.xml', (req, res) => {
+  const distSitemap = path.join(DIST_DIR, 'sitemap.xml')
+  const publicSitemap = path.resolve(__dirname, '../public/sitemap.xml')
+  const target = fs.existsSync(distSitemap) ? distSitemap : publicSitemap
+  if (fs.existsSync(target)) {
+    res.setHeader('Content-Type', 'application/xml')
+    return res.sendFile(target)
+  }
+  return res.status(404).send('Sitemap not found')
+})
+
 // SPA Fallback & API 404 Handler (Express 5 compatible)
 app.use((req, res, next) => {
   // If it is an unhandled /api route, return JSON 404
