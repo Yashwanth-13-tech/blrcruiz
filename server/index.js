@@ -467,6 +467,13 @@ app.get('/api/bookings', (req, res) => {
   })
 })
 
+const DIST_DIR = path.resolve(__dirname, '../dist')
+
+// Serve static assets from Vite build directory
+if (fs.existsSync(DIST_DIR)) {
+  app.use(express.static(DIST_DIR, { index: false }))
+}
+
 /**
  * Health & Status endpoints (compatible with Render health check pings)
  */
@@ -494,14 +501,51 @@ const healthHandler = (req, res) => {
 
 app.get('/api/health', healthHandler)
 app.get('/health', healthHandler)
-app.get('/', healthHandler)
 
-// Catch-all 404 handler for unknown API routes (always returns JSON)
-app.use('/api', (req, res) => {
-  return res.status(404).json({
-    success: false,
-    message: `API endpoint not found: ${req.method} ${req.originalUrl}`,
-  })
+// SPA Fallback & API 404 Handler (Express 5 compatible)
+app.use((req, res, next) => {
+  // If it is an unhandled /api route, return JSON 404
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({
+      success: false,
+      message: `API endpoint not found: ${req.method} ${req.originalUrl}`,
+    })
+  }
+
+  // If it is a GET request, serve index.html for React SPA client-side routing
+  if (req.method === 'GET') {
+    const indexPath = path.join(DIST_DIR, 'index.html')
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath)
+    }
+
+    return res.status(200).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>BLR CRUIZ | Car Rental Bangalore</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+            .card { background: #1e293b; padding: 2rem 2.5rem; border-radius: 1.5rem; border: 1px solid #334155; max-width: 500px; }
+            h1 { color: #f97316; margin-bottom: 0.5rem; font-size: 1.5rem; }
+            p { color: #94a3b8; font-size: 0.9rem; line-height: 1.5; }
+            a { color: #f97316; font-weight: bold; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>BLR CRUIZ Server is Online</h1>
+            <p>Express API is running. Building frontend assets...</p>
+            <p><a href="/api/health">Check API Health &rarr;</a></p>
+          </div>
+        </body>
+      </html>
+    `)
+  }
+
+  next()
 })
 
 // Global error handler (always returns JSON)
