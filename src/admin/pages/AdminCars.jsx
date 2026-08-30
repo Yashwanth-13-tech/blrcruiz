@@ -1,0 +1,430 @@
+import React, { useState, useMemo } from 'react'
+import {
+  Car,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Edit2,
+  Trash2,
+  CheckCircle2,
+  XCircle,
+  Star,
+  RefreshCw,
+  Users,
+  Settings,
+  Fuel,
+  Snowflake,
+  Images,
+  MapPin,
+} from 'lucide-react'
+import { useCars } from '../../context/CarContext.jsx'
+import { formatPrice } from '../../utils/pricing.js'
+import CarFormModal from '../components/CarFormModal.jsx'
+import DeleteConfirmModal from '../components/DeleteConfirmModal.jsx'
+
+const CATEGORIES = ['All', 'Hatchback', 'Sedan', 'SUV', 'Luxury']
+const STATUS_OPTIONS = ['All Statuses', 'Available', 'Booked', 'Popular']
+
+export default function AdminCars() {
+  const { cars, addCar, updateCar, deleteCar, toggleAvailability, togglePopular, resetCars, loading, locations } = useCars()
+
+  // Build a quick location id→name lookup
+  const locationMap = useMemo(() => {
+    const m = {}
+    for (const loc of locations) m[loc.id] = loc
+    return m
+  }, [locations])
+
+  const [query, setQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('All')
+  const [statusFilter, setStatusFilter] = useState('All Statuses')
+  const [sortBy, setSortBy] = useState('id-asc')
+
+  // Modals state
+  const [editingCar, setEditingCar] = useState(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [deletingCar, setDeletingCar] = useState(null)
+  const [actionLoading, setActionLoading] = useState(false)
+
+  // Filter and sort logic
+  const filteredCars = useMemo(() => {
+    let result = cars.filter((car) => {
+      // Category match
+      const matchCat = categoryFilter === 'All' || car.category === categoryFilter
+
+      // Status match
+      let matchStatus = true
+      if (statusFilter === 'Available') matchStatus = car.available === true
+      if (statusFilter === 'Booked') matchStatus = car.available === false
+      if (statusFilter === 'Popular') matchStatus = car.popular === true
+
+      // Search query match
+      const q = query.trim().toLowerCase()
+      const matchQuery =
+        !q ||
+        car.brand.toLowerCase().includes(q) ||
+        car.model.toLowerCase().includes(q) ||
+        car.category.toLowerCase().includes(q) ||
+        car.transmission.toLowerCase().includes(q) ||
+        car.fuel.toLowerCase().includes(q) ||
+        String(car.year).includes(q)
+
+      return matchCat && matchStatus && matchQuery
+    })
+
+    // Sort
+    switch (sortBy) {
+      case 'price-asc':
+        return [...result].sort((a, b) => a.pricePerDay - b.pricePerDay)
+      case 'price-desc':
+        return [...result].sort((a, b) => b.pricePerDay - a.pricePerDay)
+      case 'rating-desc':
+        return [...result].sort((a, b) => b.rating - a.rating)
+      case 'year-desc':
+        return [...result].sort((a, b) => b.year - a.year)
+      case 'id-desc':
+        return [...result].sort((a, b) => b.id - a.id)
+      case 'id-asc':
+      default:
+        return [...result].sort((a, b) => a.id - b.id)
+    }
+  }, [cars, query, categoryFilter, statusFilter, sortBy])
+
+  // Save handler for Add / Edit
+  const handleSaveCar = async (formData) => {
+    setActionLoading(true)
+    let res
+    if (editingCar) {
+      res = await updateCar(editingCar.id, formData)
+    } else {
+      res = await addCar(formData)
+    }
+    setActionLoading(false)
+
+    if (res.success) {
+      setEditingCar(null)
+      setShowAddModal(false)
+    } else {
+      alert(res.error || 'Failed to save vehicle details')
+    }
+  }
+
+  // Delete handler
+  const handleConfirmDelete = async () => {
+    if (!deletingCar) return
+    setActionLoading(true)
+    const res = await deleteCar(deletingCar.id)
+    setActionLoading(false)
+    if (res.success) {
+      setDeletingCar(null)
+    } else {
+      alert(res.error || 'Failed to delete vehicle')
+    }
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header & Main Actions */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-display text-2xl font-extrabold text-charcoal-900">
+            Car Inventory ({cars.length})
+          </h2>
+          <p className="text-xs text-charcoal-500">
+            Manage your live vehicle catalog. Changes immediately update the public website.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn-accent text-xs !py-2.5 !px-4"
+          >
+            <Plus size={16} />
+            <span>Add Vehicle</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-charcoal-900/10 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Search box */}
+          <div className="relative flex-1 max-w-md">
+            <Search
+              size={17}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-charcoal-400"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by brand, model, transmission, fuel, year..."
+              className="input-field pl-10 text-xs py-2.5"
+            />
+          </div>
+
+          {/* Dropdown Filters */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="input-field w-auto text-xs py-2"
+              aria-label="Filter by status"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="input-field w-auto text-xs py-2"
+              aria-label="Sort inventory"
+            >
+              <option value="id-asc">Sort: Default Order</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="year-desc">Newest Year</option>
+              <option value="rating-desc">Highest Rated</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Category Pills */}
+        <div className="flex flex-wrap gap-2 pt-2 border-t border-charcoal-900/5">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                categoryFilter === cat
+                  ? 'bg-accent-500 text-white shadow-sm'
+                  : 'bg-charcoal-100 text-charcoal-700 hover:bg-charcoal-200'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Inventory Table / Grid */}
+      {filteredCars.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-charcoal-900/10 bg-white py-16 text-center shadow-sm">
+          <Car size={40} className="text-charcoal-300 mb-3" />
+          <h3 className="font-display text-base font-bold text-charcoal-900">No vehicles found</h3>
+          <p className="text-xs text-charcoal-500 mt-1 max-w-sm">
+            Try adjusting your search terms or filters to find the cars you're looking for.
+          </p>
+          <button
+            onClick={() => {
+              setQuery('')
+              setCategoryFilter('All')
+              setStatusFilter('All Statuses')
+            }}
+            className="btn-dark mt-4 text-xs !py-2 !px-4"
+          >
+            Clear Filters
+          </button>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-3xl border border-charcoal-900/10 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-charcoal-900/10 bg-charcoal-50/70 text-[11px] font-bold uppercase tracking-wider text-charcoal-500">
+                <tr>
+                  <th className="px-5 py-3.5">Vehicle</th>
+                  <th className="px-4 py-3.5">Category</th>
+                  <th className="px-4 py-3.5">Specs</th>
+                  <th className="px-4 py-3.5">Daily Rate</th>
+                  <th className="px-4 py-3.5">Locations</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Featured</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-charcoal-900/5 font-medium text-charcoal-700">
+                {filteredCars.map((car) => {
+                  const imageCount = (car.images && car.images.length) || (car.image ? 1 : 0)
+                  return (
+                    <tr key={car.id} className="hover:bg-charcoal-50/50 transition-colors">
+                      {/* Vehicle image & brand */}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-xl bg-charcoal-100 ring-1 ring-charcoal-900/10">
+                            <img
+                              src={car.image}
+                              alt={`${car.brand} ${car.model}`}
+                              className="h-full w-full object-cover"
+                            />
+                            {imageCount > 1 && (
+                              <span className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-charcoal-950/75 px-1 py-0.2 text-[9px] font-bold text-white backdrop-blur-xs">
+                                <Images size={9} /> {imageCount}
+                              </span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-display text-sm font-bold text-charcoal-900">
+                              {car.brand} {car.model}
+                            </p>
+                            <p className="text-[11px] text-charcoal-400 font-medium">
+                              {car.year} Model • ID #{car.id}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td className="px-4 py-4">
+                        <span className="rounded-lg bg-charcoal-100 px-2.5 py-1 text-[11px] font-bold text-charcoal-800">
+                          {car.category}
+                        </span>
+                      </td>
+
+                      {/* Specs */}
+                      <td className="px-4 py-4">
+                        <div className="flex flex-col gap-1 text-[11px] text-charcoal-600">
+                          <span className="flex items-center gap-1">
+                            <Settings size={12} className="text-charcoal-400" /> {car.transmission}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Fuel size={12} className="text-charcoal-400" /> {car.fuel} • {car.seats} Seats
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Price */}
+                      <td className="px-4 py-4 font-display font-extrabold text-sm text-charcoal-900">
+                        {formatPrice(car.pricePerDay)}
+                        <span className="text-[10px] font-normal text-charcoal-400">/day</span>
+                      </td>
+
+                      {/* Locations */}
+                      <td className="px-4 py-4 max-w-[160px]">
+                        {Array.isArray(car.locations) && car.locations.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {car.locations.slice(0, 2).map((lid) => {
+                              const loc = locationMap[lid]
+                              return loc ? (
+                                <span
+                                  key={lid}
+                                  className="inline-flex items-center gap-0.5 rounded-md bg-accent-50 border border-accent-200/60 px-1.5 py-0.5 text-[10px] font-bold text-accent-700 truncate max-w-[120px]"
+                                >
+                                  <MapPin size={9} className="shrink-0" />
+                                  <span className="truncate">{loc.name.split(' ')[0]}</span>
+                                </span>
+                              ) : null
+                            })}
+                            {car.locations.length > 2 && (
+                              <span className="rounded-md bg-charcoal-100 px-1.5 py-0.5 text-[10px] font-bold text-charcoal-600">
+                                +{car.locations.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-charcoal-400">Not assigned</span>
+                        )}
+                      </td>
+
+                      {/* Availability Toggle */}
+                      <td className="px-4 py-4">
+                        <button
+                          type="button"
+                          onClick={() => toggleAvailability(car.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition-all shadow-xs ${
+                            car.available
+                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                              : 'bg-charcoal-200 text-charcoal-700 hover:bg-charcoal-300'
+                          }`}
+                          title="Click to toggle availability"
+                        >
+                          {car.available ? (
+                            <>
+                              <CheckCircle2 size={12} className="text-emerald-600" /> Available
+                            </>
+                          ) : (
+                            <>
+                              <XCircle size={12} className="text-charcoal-500" /> Booked
+                            </>
+                          )}
+                        </button>
+                      </td>
+
+                      {/* Popular / Featured Toggle */}
+                      <td className="px-4 py-4">
+                        <button
+                          type="button"
+                          onClick={() => togglePopular(car.id)}
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
+                            car.popular
+                              ? 'bg-accent-50 text-accent-700 hover:bg-accent-100 border border-accent-200'
+                              : 'text-charcoal-400 hover:text-charcoal-700 bg-charcoal-50'
+                          }`}
+                          title="Click to toggle featured status"
+                        >
+                          <Star
+                            size={12}
+                            className={car.popular ? 'fill-accent-500 text-accent-500' : ''}
+                          />
+                          {car.popular ? 'Featured' : 'Standard'}
+                        </button>
+                      </td>
+
+                      {/* Action buttons */}
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingCar(car)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-charcoal-900/10 text-charcoal-600 hover:bg-charcoal-100 hover:text-charcoal-900 transition-colors"
+                            title="Edit Vehicle"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingCar(car)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-charcoal-900/10 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+                            title="Delete Vehicle"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Modal */}
+      {(showAddModal || editingCar) && (
+        <CarFormModal
+          car={editingCar}
+          onSave={handleSaveCar}
+          onClose={() => {
+            setShowAddModal(false)
+            setEditingCar(null)
+          }}
+          loading={actionLoading}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingCar && (
+        <DeleteConfirmModal
+          title={`Delete ${deletingCar.brand} ${deletingCar.model}?`}
+          message={`Are you sure you want to delete this vehicle from your inventory? It will immediately disappear from the public website and booking options.`}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setDeletingCar(null)}
+          loading={actionLoading}
+        />
+      )}
+    </div>
+  )
+}

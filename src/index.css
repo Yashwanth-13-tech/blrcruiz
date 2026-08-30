@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    overflow-x: hidden;
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Remove 300ms tap delay on ALL interactive elements on mobile */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background-color: #ff6a1a;
+    color: #ffffff;
+  }
+}
+
+/* Minimal sleek custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@layer components {
+  /* Minimal & High-Impact Modern Buttons */
+  .btn-accent {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs transition-all duration-200 hover:bg-accent-600 hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2;
+  }
+
+  .btn-dark {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs transition-all duration-200 hover:bg-slate-800 hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2;
+  }
+
+  .btn-whatsapp {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs transition-all duration-200 hover:bg-[#1faa53] hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:ring-offset-2;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-700 shadow-2xs transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition-all duration-200 hover:border-accent-300 hover:bg-accent-50/50 hover:text-accent-600 active:scale-[0.98];
+  }
+
+  /* Typography Utilities */
+  .section-heading {
+    @apply font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900 leading-tight;
+  }
+
+  .section-eyebrow {
+    @apply mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-accent-200 bg-accent-50/80 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider text-accent-700;
+  }
+
+  /* Form Inputs */
+  .input-field {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 transition-all duration-200 placeholder:text-slate-400 focus:border-accent-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/20;
+  }
+
+  .label-field {
+    @apply mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-600;
+  }
+
+  /* Clean Minimal Card */
+  .clean-card {
+    @apply rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white shadow-xs transition-all duration-300 hover:border-slate-300 hover:shadow-md;
+  }
+
+  /* Hover lift — pre-promotes element to GPU layer for smooth translate animation */
+  .hover-lift {
+    will-change: transform;
+    transform: translateZ(0);
+  }
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
