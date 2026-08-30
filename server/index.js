@@ -97,6 +97,78 @@ function saveBookings(bookings) {
 
 let confirmedBookings = loadBookings()
 
+// In-memory / file-backed customer inquiries storage with graceful fallback
+const INQUIRIES_FILE = path.join(__dirname, 'inquiries_data.json')
+
+function loadInquiries() {
+  try {
+    if (fs.existsSync(INQUIRIES_FILE)) {
+      const data = fs.readFileSync(INQUIRIES_FILE, 'utf-8')
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not read inquiries file, initializing defaults:', err.message)
+  }
+
+  // Seed sample initial inquiries if file does not exist yet
+  const sampleInquiries = [
+    {
+      id: 'inq_1',
+      name: 'Rohan Sharma',
+      phone: '9845012345',
+      email: 'rohan.sharma@example.com',
+      carName: 'Hyundai Creta',
+      carId: 6,
+      pickupLocation: 'Kempegowda International Airport',
+      pickupDate: '2026-09-01',
+      returnDate: '2026-09-04',
+      days: 3,
+      estimatedTotal: '₹8,397',
+      message: 'Need the car delivered to Terminal 2 arrival gate.',
+      status: 'New',
+      createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+      updatedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+    },
+    {
+      id: 'inq_2',
+      name: 'Ananya Deshmukh',
+      phone: '9988776655',
+      email: 'ananya.d@example.com',
+      carName: 'BMW 3 Series',
+      carId: 10,
+      pickupLocation: 'Indiranagar',
+      pickupDate: '2026-09-05',
+      returnDate: '2026-09-07',
+      days: 2,
+      estimatedTotal: '₹15,998',
+      message: 'Looking for a clean luxury car for client visit.',
+      status: 'Contacted',
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000).toISOString(),
+    },
+  ]
+  saveInquiries(sampleInquiries)
+  return sampleInquiries
+}
+
+function saveInquiries(inquiries) {
+  try {
+    const dir = path.dirname(INQUIRIES_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(INQUIRIES_FILE, JSON.stringify(inquiries, null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not persist inquiries to disk (Render ephemeral storage), retained in memory cache:', err.message)
+  }
+}
+
+let confirmedInquiries = loadInquiries()
+
+// In-memory active admin sessions map
+const activeAdminSessions = new Map()
+
 // --- Admin Authentication API Endpoints ---
 app.post('/api/auth/login', (req, res) => {
   try {
@@ -464,6 +536,151 @@ app.get('/api/bookings', (req, res) => {
   return res.status(200).json({
     success: true,
     bookings: confirmedBookings,
+  })
+})
+
+/**
+ * GET /api/inquiries
+ * Retrieve all customer inquiries (sorted latest first)
+ */
+app.get('/api/inquiries', (req, res) => {
+  return res.status(200).json({
+    success: true,
+    inquiries: [...confirmedInquiries].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+  })
+})
+
+/**
+ * POST /api/inquiries
+ * Create a new customer inquiry (from contact form or direct booking modal)
+ */
+app.post('/api/inquiries', (req, res) => {
+  try {
+    const data = req.body || {}
+    if (!data.name || !data.phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer name and phone number are required.',
+      })
+    }
+
+    const id = 'inq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)
+    const newInquiry = {
+      id,
+      name: String(data.name).trim(),
+      phone: String(data.phone).trim(),
+      email: data.email ? String(data.email).trim() : '',
+      carName: data.carName || data.car || 'General Inquiry',
+      carId: data.carId || null,
+      pickupLocation: data.pickupLocation || 'Bangalore City',
+      pickupDate: data.pickupDate || '',
+      returnDate: data.returnDate || '',
+      days: Number(data.days) || 1,
+      estimatedTotal: data.estimatedTotal || '—',
+      message: data.message ? String(data.message).trim() : '',
+      status: 'New',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    confirmedInquiries.unshift(newInquiry)
+    saveInquiries(confirmedInquiries)
+
+    return res.status(201).json({
+      success: true,
+      message: 'Inquiry registered successfully.',
+      inquiry: newInquiry,
+    })
+  } catch (err) {
+    console.error('Error adding inquiry:', err)
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Failed to register inquiry.',
+    })
+  }
+})
+
+/**
+ * PUT /api/inquiries/:id
+ * Update inquiry status (admin protected)
+ */
+app.put('/api/inquiries/:id', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  const { id } = req.params
+  const { status, notes } = req.body || {}
+
+  const index = confirmedInquiries.findIndex((inq) => inq.id === id)
+  if (index === -1) {
+    return res.status(404).json({
+      success: false,
+      message: `Inquiry with ID ${id} not found.`,
+    })
+  }
+
+  confirmedInquiries[index] = {
+    ...confirmedInquiries[index],
+    ...(status ? { status } : {}),
+    ...(notes !== undefined ? { notes } : {}),
+    updatedAt: new Date().toISOString(),
+  }
+
+  saveInquiries(confirmedInquiries)
+
+  return res.status(200).json({
+    success: true,
+    message: 'Inquiry updated successfully.',
+    inquiry: confirmedInquiries[index],
+  })
+})
+
+/**
+ * DELETE /api/inquiries/:id
+ * Permanently delete customer inquiry (admin protected)
+ */
+app.delete('/api/inquiries/:id', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  const { id } = req.params
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Inquiry ID is required.',
+    })
+  }
+
+  const index = confirmedInquiries.findIndex((inq) => inq.id === id)
+  if (index === -1) {
+    return res.status(404).json({
+      success: false,
+      message: `Inquiry with ID ${id} not found or already deleted.`,
+    })
+  }
+
+  const deletedInquiry = confirmedInquiries.splice(index, 1)[0]
+  saveInquiries(confirmedInquiries)
+
+  return res.status(200).json({
+    success: true,
+    message: 'Inquiry permanently deleted.',
+    deletedId: id,
+    inquiry: deletedInquiry,
   })
 })
 

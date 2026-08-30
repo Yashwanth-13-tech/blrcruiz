@@ -54,9 +54,10 @@ function openDB() {
 export async function initDB() {
   const db = await openDB()
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([CARS_STORE, INQUIRIES_STORE], 'readwrite')
+    const tx = db.transaction([CARS_STORE, INQUIRIES_STORE, SETTINGS_STORE], 'readwrite')
     const carStore = tx.objectStore(CARS_STORE)
     const inqStore = tx.objectStore(INQUIRIES_STORE)
+    const settingsStore = tx.objectStore(SETTINGS_STORE)
 
     const countReq = carStore.count()
     countReq.onsuccess = () => {
@@ -73,45 +74,51 @@ export async function initDB() {
       }
     }
 
-    // Seed sample inquiries if empty for demo clarity
-    const inqCountReq = inqStore.count()
-    inqCountReq.onsuccess = () => {
-      if (inqCountReq.result === 0) {
-        const sampleInquiries = [
-          {
-            id: 'inq_1',
-            name: 'Rohan Sharma',
-            phone: '9845012345',
-            email: 'rohan.sharma@example.com',
-            carName: 'Hyundai Creta',
-            carId: 6,
-            pickupLocation: 'Kempegowda International Airport',
-            pickupDate: '2026-09-01',
-            returnDate: '2026-09-04',
-            days: 3,
-            estimatedTotal: '₹8,397',
-            message: 'Need the car delivered to Terminal 2 arrival gate.',
-            status: 'New',
-            createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-          },
-          {
-            id: 'inq_2',
-            name: 'Ananya Deshmukh',
-            phone: '9988776655',
-            email: 'ananya.d@example.com',
-            carName: 'BMW 3 Series',
-            carId: 10,
-            pickupLocation: 'Indiranagar',
-            pickupDate: '2026-09-05',
-            returnDate: '2026-09-07',
-            days: 2,
-            estimatedTotal: '₹15,998',
-            message: 'Looking for a clean luxury car for client visit.',
-            status: 'Contacted',
-            createdAt: new Date(Date.now() - 86400000).toISOString(),
-          },
-        ]
-        sampleInquiries.forEach((inq) => inqStore.add(inq))
+    // Seed sample inquiries ONLY on initial setup, never on refresh after user deletion
+    const initFlagReq = settingsStore.get('inquiries_initialized')
+    initFlagReq.onsuccess = () => {
+      if (!initFlagReq.result) {
+        settingsStore.put({ key: 'inquiries_initialized', value: true, timestamp: new Date().toISOString() })
+        const inqCountReq = inqStore.count()
+        inqCountReq.onsuccess = () => {
+          if (inqCountReq.result === 0) {
+            const sampleInquiries = [
+              {
+                id: 'inq_1',
+                name: 'Rohan Sharma',
+                phone: '9845012345',
+                email: 'rohan.sharma@example.com',
+                carName: 'Hyundai Creta',
+                carId: 6,
+                pickupLocation: 'Kempegowda International Airport',
+                pickupDate: '2026-09-01',
+                returnDate: '2026-09-04',
+                days: 3,
+                estimatedTotal: '₹8,397',
+                message: 'Need the car delivered to Terminal 2 arrival gate.',
+                status: 'New',
+                createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+              },
+              {
+                id: 'inq_2',
+                name: 'Ananya Deshmukh',
+                phone: '9988776655',
+                email: 'ananya.d@example.com',
+                carName: 'BMW 3 Series',
+                carId: 10,
+                pickupLocation: 'Indiranagar',
+                pickupDate: '2026-09-05',
+                returnDate: '2026-09-07',
+                days: 2,
+                estimatedTotal: '₹15,998',
+                message: 'Looking for a clean luxury car for client visit.',
+                status: 'Contacted',
+                createdAt: new Date(Date.now() - 86400000).toISOString(),
+              },
+            ]
+            sampleInquiries.forEach((inq) => inqStore.add(inq))
+          }
+        }
       }
     }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, MessageCircle, Phone, Mail, MapPin, Calendar, Car, Clock, Trash2, CheckCircle2 } from 'lucide-react'
+import { X, MessageCircle, Phone, Mail, MapPin, Calendar, Car, Clock, Trash2, CheckCircle2, Loader2 } from 'lucide-react'
 import { createWhatsAppLink, createCallLink } from '../../utils/whatsapp.js'
 import { formatDate } from '../../utils/pricing.js'
 
@@ -9,6 +9,7 @@ const STATUSES = ['New', 'Contacted', 'Confirmed', 'Cancelled']
 export default function InquiryDetailsModal({ inquiry, onClose, onUpdateStatus, onDelete }) {
   const [status, setStatus] = useState(inquiry.status || 'New')
   const [updating, setUpdating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -28,6 +29,18 @@ export default function InquiryDetailsModal({ inquiry, onClose, onUpdateStatus, 
     setUpdating(true)
     await onUpdateStatus(inquiry.id, newStatus)
     setUpdating(false)
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      if (typeof onDelete === 'function') {
+        await onDelete(inquiry)
+      }
+      onClose()
+    } catch {
+      setDeleting(false)
+    }
   }
 
   // Pre-filled WhatsApp reply message
@@ -175,11 +188,16 @@ export default function InquiryDetailsModal({ inquiry, onClose, onUpdateStatus, 
         <div className="flex items-center justify-between border-t border-charcoal-900/10 bg-charcoal-50/60 px-5 sm:px-6 py-3.5">
           <button
             type="button"
-            onClick={() => onDelete(inquiry.id)}
-            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:text-red-700"
+            disabled={deleting}
+            onClick={handleDelete}
+            className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-700 disabled:opacity-50"
           >
-            <Trash2 size={14} />
-            <span>Delete Inquiry</span>
+            {deleting ? (
+              <Loader2 size={14} className="animate-spin text-red-500" />
+            ) : (
+              <Trash2 size={14} />
+            )}
+            <span>{deleting ? 'Deleting...' : 'Delete Inquiry'}</span>
           </button>
 
           <a

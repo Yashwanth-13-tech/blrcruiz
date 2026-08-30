@@ -46,3 +46,4 @@ dist-ssr/
 
 # Server data
 server/bookings_data.json
+server/inquiries_data.json

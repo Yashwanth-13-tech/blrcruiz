@@ -15,6 +15,7 @@ import { useCars } from '../../context/CarContext.jsx'
 import { formatDate } from '../../utils/pricing.js'
 import { createCallLink } from '../../utils/whatsapp.js'
 import InquiryDetailsModal from '../components/InquiryDetailsModal.jsx'
+import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 
 const STATUS_TABS = ['All', 'New', 'Contacted', 'Confirmed', 'Cancelled']
 
@@ -23,6 +24,42 @@ export default function AdminInquiries() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [selectedInquiry, setSelectedInquiry] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+  const [notification, setNotification] = useState(null)
+
+  const handleDeleteInquiry = async (inq) => {
+    const confirmDelete = window.confirm(
+      `Permanently delete customer inquiry from "${inq.name}" (${inq.phone})?\n\nThis will remove the lead permanently from backend storage.`
+    )
+    if (!confirmDelete) return
+
+    setDeletingId(inq.id)
+    setNotification(null)
+
+    try {
+      const res = await deleteInquiry(inq.id)
+      if (res && res.success === false) {
+        throw new Error(res.error || 'Failed to delete inquiry from server.')
+      }
+      setNotification({
+        type: 'success',
+        message: `Inquiry from ${inq.name} permanently deleted.`,
+      })
+      if (selectedInquiry?.id === inq.id) {
+        setSelectedInquiry(null)
+      }
+      setTimeout(() => setNotification(null), 4000)
+    } catch (err) {
+      console.error('Delete inquiry error:', err)
+      setNotification({
+        type: 'error',
+        message: err.message || 'Could not delete inquiry. Please try again.',
+      })
+      setTimeout(() => setNotification(null), 5000)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const filteredInquiries = useMemo(() => {
     return inquiries.filter((inq) => {
@@ -61,6 +98,24 @@ export default function AdminInquiries() {
           </div>
         )}
       </div>
+
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`flex items-center gap-2.5 rounded-2xl p-3.5 text-xs font-semibold animate-fade-in ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}
+        >
+          {notification.type === 'success' ? (
+            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle size={16} className="text-red-600 shrink-0" />
+          )}
+          <span>{notification.message}</span>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-4 rounded-2xl border border-charcoal-900/10 bg-white p-4 shadow-sm sm:p-5">
@@ -228,15 +283,16 @@ export default function AdminInquiries() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (window.confirm(`Delete inquiry from ${inq.name}?`)) {
-                                deleteInquiry(inq.id)
-                              }
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-charcoal-900/10 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+                            disabled={deletingId === inq.id}
+                            onClick={() => handleDeleteInquiry(inq)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-charcoal-900/10 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-50"
                             title="Delete Lead"
                           >
-                            <Trash2 size={14} />
+                            {deletingId === inq.id ? (
+                              <Loader2 size={14} className="animate-spin text-red-500" />
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
                           </button>
                         </div>
                       </td>
@@ -255,7 +311,7 @@ export default function AdminInquiries() {
           inquiry={selectedInquiry}
           onClose={() => setSelectedInquiry(null)}
           onUpdateStatus={updateInquiryStatus}
-          onDelete={deleteInquiry}
+          onDelete={handleDeleteInquiry}
         />
       )}
     </div>
