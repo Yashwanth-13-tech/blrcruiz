@@ -5,6 +5,8 @@
  * NO API keys or secrets are stored or exposed here.
  */
 
+import { apiUrl } from '../config/api.js'
+
 let sdkPromise = null
 
 /**
@@ -36,37 +38,17 @@ export function loadRazorpaySDK() {
 }
 
 /**
- * Safe JSON Response Parser
- * Prevents "Unexpected end of JSON input" errors when server returns empty, non-JSON, or error responses.
+ * Helper to safely parse JSON response and handle non-JSON or HTML error pages
  */
 async function safeParseJsonResponse(response, defaultErrorMessage) {
-  let text = ''
-  try {
-    text = await response.text()
-  } catch (readErr) {
-    throw new Error(`Failed to read server response: ${readErr.message}`)
-  }
-
-  // Handle completely empty responses
-  if (!text || text.trim() === '') {
-    if (!response.ok) {
-      throw new Error(
-        defaultErrorMessage ||
-        `Backend server returned HTTP ${response.status} with empty response. Please ensure the backend server is running (npm run server).`
-      )
-    }
-    return { success: true }
-  }
-
-  // Check if content looks like JSON
+  const text = await response.text()
   const trimmed = text.trim()
+
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
       const data = JSON.parse(trimmed)
-      if (!response.ok || data.success === false) {
-        throw new Error(
-          data.message || data.error || defaultErrorMessage || `Server returned error (${response.status})`
-        )
+      if (!response.ok) {
+        throw new Error(data.message || data.error || defaultErrorMessage || `Server returned HTTP ${response.status}`)
       }
       return data
     } catch (parseErr) {
@@ -87,7 +69,7 @@ async function safeParseJsonResponse(response, defaultErrorMessage) {
  */
 export async function fetchRazorpayConfig() {
   try {
-    const res = await fetch('/api/config/razorpay')
+    const res = await fetch(apiUrl('/api/config/razorpay'))
     const data = await safeParseJsonResponse(res, 'Could not fetch Razorpay configuration.')
     return data
   } catch (error) {
@@ -108,7 +90,7 @@ export async function fetchRazorpayConfig() {
 export async function createBackendOrder(bookingPayload) {
   let response
   try {
-    response = await fetch('/api/razorpay/create-order', {
+    response = await fetch(apiUrl('/api/razorpay/create-order'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -118,7 +100,7 @@ export async function createBackendOrder(bookingPayload) {
     })
   } catch (fetchErr) {
     throw new Error(
-      `Cannot connect to backend server. Please make sure the backend is running on port 5000 (run "npm run server"). Details: ${fetchErr.message}`
+      `Cannot connect to backend server. Please make sure the backend is running. Details: ${fetchErr.message}`
     )
   }
 
@@ -131,7 +113,7 @@ export async function createBackendOrder(bookingPayload) {
 export async function verifyBackendPayment(razorpayResponse, bookingDetails) {
   let response
   try {
-    response = await fetch('/api/razorpay/verify-payment', {
+    response = await fetch(apiUrl('/api/razorpay/verify-payment'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -146,7 +128,7 @@ export async function verifyBackendPayment(razorpayResponse, bookingDetails) {
     })
   } catch (fetchErr) {
     throw new Error(
-      `Cannot connect to backend server for verification. Please make sure the backend is running (run "npm run server"). Details: ${fetchErr.message}`
+      `Cannot connect to backend server for verification. Details: ${fetchErr.message}`
     )
   }
 

@@ -1,4 +1,5 @@
 import { putInStore, getByIdFromStore } from './db.js'
+import { apiUrl } from '../config/api.js'
 
 const AUTH_STORAGE_KEY = 'blrcruiz_admin_session'
 const SETTINGS_AUTH_KEY = 'admin_credentials'
@@ -49,7 +50,7 @@ export const authService = {
 
     // 1. Attempt server-side validation first
     try {
-      const serverRes = await fetch('/api/auth/login', {
+      const serverRes = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: trimmedUser, password: trimmedPass }),
@@ -148,7 +149,7 @@ export const authService = {
     const token = this.getToken()
     if (!token) return false
     try {
-      const res = await fetch('/api/auth/verify', {
+      const res = await fetch(apiUrl('/api/auth/verify'), {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -172,7 +173,7 @@ export const authService = {
     const token = this.getToken()
     if (token) {
       try {
-        fetch('/api/auth/logout', {
+        fetch(apiUrl('/api/auth/logout'), {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         }).catch(() => {})

@@ -15,9 +15,51 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 const PORT = process.env.PORT || 5000
+const HOST = '0.0.0.0'
 
-// Middleware
-app.use(cors())
+// CORS configuration supporting Vercel previews, production domain, and localhost
+const allowedOrigins = [
+  'https://blrcruiz.in',
+  'https://www.blrcruiz.in',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+]
+
+if (process.env.FRONTEND_URL) {
+  process.env.FRONTEND_URL.split(',').forEach((url) => {
+    const trimmed = url.trim().replace(/\/+$/, '')
+    if (trimmed && !allowedOrigins.includes(trimmed)) {
+      allowedOrigins.push(trimmed)
+    }
+  })
+}
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (server-to-server, health checks, curl, mobile apps)
+    if (!origin) return callback(null, true)
+
+    // Check exact allowed domains
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+
+    // Allow all *.vercel.app preview and production domains
+    if (/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/.test(origin)) return callback(null, true)
+
+    // In non-production or if FRONTEND_URL is '*', allow
+    if (process.env.NODE_ENV !== 'production' || process.env.FRONTEND_URL === '*') {
+      return callback(null, true)
+    }
+
+    return callback(null, true)
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+}
+
+app.use(cors(corsOptions))
 app.use(express.json())
 
 // Ensure all /api responses return JSON content-type
@@ -26,8 +68,34 @@ app.use('/api', (req, res, next) => {
   next()
 })
 
-// In-memory active authenticated admin sessions store
-const activeAdminSessions = new Map()
+// In-memory / file-backed bookings storage with graceful fallback for cloud environments
+const BOOKINGS_FILE = path.join(__dirname, 'bookings_data.json')
+
+function loadBookings() {
+  try {
+    if (fs.existsSync(BOOKINGS_FILE)) {
+      const data = fs.readFileSync(BOOKINGS_FILE, 'utf-8')
+      return JSON.parse(data)
+    }
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not read local bookings file, starting with memory store:', err.message)
+  }
+  return []
+}
+
+function saveBookings(bookings) {
+  try {
+    const dir = path.dirname(BOOKINGS_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(BOOKINGS_FILE, JSON.stringify(bookings, null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not persist to local disk (Render ephemeral storage), retained in memory cache:', err.message)
+  }
+}
+
+let confirmedBookings = loadBookings()
 
 // --- Admin Authentication API Endpoints ---
 app.post('/api/auth/login', (req, res) => {
@@ -134,31 +202,6 @@ app.post('/api/auth/logout', (req, res) => {
   }
   return res.status(200).json({ success: true, message: 'Logged out successfully.' })
 })
-
-// In-memory / file-backed bookings storage
-const BOOKINGS_FILE = path.join(__dirname, 'bookings_data.json')
-
-function loadBookings() {
-  try {
-    if (fs.existsSync(BOOKINGS_FILE)) {
-      const data = fs.readFileSync(BOOKINGS_FILE, 'utf-8')
-      return JSON.parse(data)
-    }
-  } catch (err) {
-    console.error('Error loading bookings file:', err)
-  }
-  return []
-}
-
-function saveBookings(bookings) {
-  try {
-    fs.writeFileSync(BOOKINGS_FILE, JSON.stringify(bookings, null, 2), 'utf-8')
-  } catch (err) {
-    console.error('Error saving bookings file:', err)
-  }
-}
-
-let confirmedBookings = loadBookings()
 
 // Helper: Initialize Razorpay instance securely with environment variables
 function getRazorpayInstance() {
@@ -405,9 +448,19 @@ app.post('/api/razorpay/verify-payment', async (req, res) => {
 })
 
 /**
- * Get all confirmed bookings (for admin management)
+ * Get all confirmed bookings (for admin management) - Protected
  */
 app.get('/api/bookings', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
   return res.status(200).json({
     success: true,
     bookings: confirmedBookings,
@@ -415,19 +468,33 @@ app.get('/api/bookings', (req, res) => {
 })
 
 /**
- * General Health endpoint
+ * Health & Status endpoints (compatible with Render health check pings)
  */
-app.get('/api/health', (req, res) => {
+const healthHandler = (req, res) => {
+  const keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || ''
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || ''
+  const razorpayConfigured = Boolean(
+    keyId &&
+    keySecret &&
+    keyId.startsWith('rzp_') &&
+    !keyId.includes('your_') &&
+    !keySecret.includes('your_')
+  )
+
   return res.status(200).json({
     status: 'healthy',
+    service: 'BLR CRUIZ Express API',
     timestamp: new Date().toISOString(),
-    razorpayConfigured: Boolean(
-      (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID) &&
-      process.env.RAZORPAY_KEY_SECRET &&
-      !process.env.RAZORPAY_KEY_ID?.includes('your_')
-    ),
+    environment: process.env.NODE_ENV || 'production',
+    port: PORT,
+    razorpayConfigured,
+    razorpayMode: keyId.startsWith('rzp_live') ? 'live' : 'test',
   })
-})
+}
+
+app.get('/api/health', healthHandler)
+app.get('/health', healthHandler)
+app.get('/', healthHandler)
 
 // Catch-all 404 handler for unknown API routes (always returns JSON)
 app.use('/api', (req, res) => {
@@ -446,8 +513,9 @@ app.use((err, req, res, next) => {
   })
 })
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`[Drivora API Server] Running securely on port ${PORT}`)
+// Start server listening on 0.0.0.0 for Render production
+app.listen(PORT, HOST, () => {
+  console.log(`[BLR CRUIZ API Server] Running on http://${HOST}:${PORT}`)
+  console.log(`[Environment] NODE_ENV: ${process.env.NODE_ENV || 'production'}`)
   console.log(`[Razorpay Status] Configured: ${Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)}`)
 })
