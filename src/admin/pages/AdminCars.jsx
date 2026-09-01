@@ -74,12 +74,12 @@ export default function AdminCars() {
       const q = query.trim().toLowerCase()
       const matchQuery =
         !q ||
-        car.brand.toLowerCase().includes(q) ||
-        car.model.toLowerCase().includes(q) ||
-        car.category.toLowerCase().includes(q) ||
-        car.transmission.toLowerCase().includes(q) ||
-        car.fuel.toLowerCase().includes(q) ||
-        String(car.year).includes(q)
+        (car.brand || '').toLowerCase().includes(q) ||
+        (car.model || '').toLowerCase().includes(q) ||
+        (car.category || '').toLowerCase().includes(q) ||
+        (car.transmission || '').toLowerCase().includes(q) ||
+        (car.fuel || '').toLowerCase().includes(q) ||
+        String(car.year || '').includes(q)
 
       return matchCat && matchStatus && matchQuery
     })

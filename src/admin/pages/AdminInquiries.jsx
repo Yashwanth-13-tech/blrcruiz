@@ -73,11 +73,11 @@ export default function AdminInquiries() {
       const q = query.trim().toLowerCase()
       const matchQuery =
         !q ||
-        inq.name.toLowerCase().includes(q) ||
-        inq.phone.toLowerCase().includes(q) ||
-        inq.carName.toLowerCase().includes(q) ||
-        inq.pickupLocation.toLowerCase().includes(q) ||
-        (inq.email && inq.email.toLowerCase().includes(q))
+        (inq.name || '').toLowerCase().includes(q) ||
+        (inq.phone || '').toLowerCase().includes(q) ||
+        (inq.carName || '').toLowerCase().includes(q) ||
+        (inq.pickupLocation || '').toLowerCase().includes(q) ||
+        (inq.email || '').toLowerCase().includes(q)
       return matchStatus && matchQuery
     })
   }, [inquiries, query, statusFilter])

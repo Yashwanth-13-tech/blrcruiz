@@ -12,6 +12,7 @@ import {
   MapPin,
   Navigation,
   Loader2,
+  Car,
 } from 'lucide-react'
 import { CATEGORIES } from '../data/cars.js'
 import { useCars } from '../context/CarContext.jsx'
