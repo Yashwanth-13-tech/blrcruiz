@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Car, CheckCircle2, XCircle, Star, MessageSquare, DollarSign, Plus, ArrowRight, TrendingUp, Calendar, MapPin, Eye } from 'lucide-react'
 import { useCars } from '../../context/CarContext.jsx'
 import { formatPrice } from '../../utils/pricing.js'
@@ -7,10 +7,16 @@ import CarFormModal from '../components/CarFormModal.jsx'
 import InquiryDetailsModal from '../components/InquiryDetailsModal.jsx'
 
 export default function AdminDashboard({ setActiveTab }) {
-  const { cars, inquiries, addCar, updateInquiryStatus, deleteInquiry } = useCars()
+  const { cars, inquiries, addCar, updateInquiryStatus, deleteInquiry, refreshData } = useCars()
   const [showAddCarModal, setShowAddCarModal] = useState(false)
   const [selectedInquiry, setSelectedInquiry] = useState(null)
   const [savingCar, setSavingCar] = useState(false)
+
+  useEffect(() => {
+    if (typeof refreshData === 'function') {
+      refreshData()
+    }
+  }, [refreshData])
 
   // Computed Metrics
   const totalCars = cars.length

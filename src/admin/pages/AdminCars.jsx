@@ -1,32 +1,37 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Car,
-  Plus,
   Search,
-  SlidersHorizontal,
+  Plus,
   Edit2,
   Trash2,
   CheckCircle2,
   XCircle,
   Star,
-  RefreshCw,
   Users,
-  Settings,
   Fuel,
-  Snowflake,
-  Images,
+  Settings,
+  Eye,
+  RotateCcw,
+  Sparkles,
   MapPin,
+  Calendar,
 } from 'lucide-react'
 import { useCars } from '../../context/CarContext.jsx'
 import { formatPrice } from '../../utils/pricing.js'
 import CarFormModal from '../components/CarFormModal.jsx'
 import DeleteConfirmModal from '../components/DeleteConfirmModal.jsx'
 
-const CATEGORIES = ['All', 'Hatchback', 'Sedan', 'SUV', 'Luxury']
 const STATUS_OPTIONS = ['All Statuses', 'Available', 'Booked', 'Popular']
 
 export default function AdminCars() {
-  const { cars, addCar, updateCar, deleteCar, toggleAvailability, togglePopular, resetCars, loading, locations } = useCars()
+  const { cars, addCar, updateCar, deleteCar, toggleAvailability, togglePopular, resetCars, loading, locations, refreshData } = useCars()
+
+  useEffect(() => {
+    if (typeof refreshData === 'function') {
+      refreshData()
+    }
+  }, [refreshData])
 
   // Build a quick location id→name lookup
   const locationMap = useMemo(() => {
@@ -46,6 +51,12 @@ export default function AdminCars() {
   const [deletingCar, setDeletingCar] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [notification, setNotification] = useState(null)
+
+  // Dynamically compute category filters based on current cars
+  const dynamicCategories = useMemo(() => {
+    const raw = Array.from(new Set(cars.map((c) => c.category).filter(Boolean)))
+    return ['All', ...raw]
+  }, [cars])
 
   // Filter and sort logic
   const filteredCars = useMemo(() => {
@@ -234,7 +245,7 @@ export default function AdminCars() {
 
         {/* Category Pills */}
         <div className="flex flex-wrap gap-2 pt-2 border-t border-charcoal-900/5">
-          {CATEGORIES.map((cat) => (
+          {dynamicCategories.map((cat) => (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}

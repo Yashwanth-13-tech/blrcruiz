@@ -2,10 +2,11 @@ import React from 'react'
 import { Car, Instagram, Facebook, Youtube, Phone, MessageCircle, Mail, MapPin, Shield } from 'lucide-react'
 import { business } from '../config/business.js'
 import { createWhatsAppLink, createCallLink, genericInquiryMessage } from '../utils/whatsapp.js'
+import { useCars } from '../context/CarContext.jsx'
 
 const QUICK_LINKS = [
   { label: 'Explore Fleet', href: '#cars' },
-  { label: 'Categories', href: '#categories' },
+  { label: 'Vehicle Categories', href: '#categories' },
   { label: 'How It Works', href: '#how-it-works' },
   { label: 'Airport Service', href: '#airport' },
   { label: 'Customer Reviews', href: '#reviews' },
@@ -13,14 +14,22 @@ const QUICK_LINKS = [
   { label: 'FAQs', href: '#faq' },
 ]
 
-const CATEGORIES = [
-  { name: 'City Hatchbacks (from ₹1,499)', href: '#cars' },
-  { name: 'Executive Sedans (from ₹2,099)', href: '#cars' },
-  { name: 'Family SUVs & 4x4 (from ₹2,299)', href: '#cars' },
-  { name: 'Luxury Cars (from ₹7,999)', href: '#cars' },
-]
-
 export default function Footer() {
+  const { cars } = useCars()
+
+  const dynamicCategoryLinks = React.useMemo(() => {
+    if (!cars || cars.length === 0) return []
+    const categories = Array.from(new Set(cars.map((c) => c.category).filter(Boolean)))
+    return categories.map((cat) => {
+      const catCars = cars.filter((c) => c.category === cat)
+      const minPrice = catCars.length > 0 ? Math.min(...catCars.map((c) => Number(c.pricePerDay) || 1499)) : 1499
+      return {
+        name: `${cat}s (from ₹${minPrice.toLocaleString('en-IN')})`,
+        category: cat,
+      }
+    })
+  }, [cars])
+
   const scrollTo = (href) => {
     if (href === '#terms' || href === '#legal') {
       if (window.navigateToTerms) window.navigateToTerms()
@@ -91,7 +100,7 @@ export default function Footer() {
               Car Types
             </h4>
             <ul className="space-y-2 text-xs font-medium text-slate-300">
-              {CATEGORIES.map((c) => (
+              {dynamicCategoryLinks.map((c) => (
                 <li key={c.name}>
                   <button
                     onClick={() => scrollTo('#cars')}

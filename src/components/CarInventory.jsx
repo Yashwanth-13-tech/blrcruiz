@@ -191,6 +191,20 @@ export default function CarInventory({
     savedOnly ||
     availableOnly
 
+  // Dynamically compute available categories from live inventory (hiding categories with 0 vehicles)
+  const availableCategories = useMemo(() => {
+    const rawCategories = Array.from(new Set(cars.map((c) => c.category).filter(Boolean)))
+    const presentCategories = rawCategories.filter((cat) => cars.some((c) => c.category === cat))
+    return ['All', ...presentCategories]
+  }, [cars])
+
+  // Fallback to All if active category was deleted or emptied
+  React.useEffect(() => {
+    if (category !== 'All' && !availableCategories.includes(category)) {
+      setCategory('All')
+    }
+  }, [availableCategories, category])
+
   return (
     <section id="cars" className="bg-slate-50/60 py-16 sm:py-20 border-t border-slate-200/80">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -245,9 +259,9 @@ export default function CarInventory({
               )}
             </div>
 
-            {/* Category Segmented Pills */}
+            {/* Category Segmented Pills (Dynamic & Data-driven) */}
             <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-              {CATEGORIES.map((cat) => {
+              {availableCategories.map((cat) => {
                 const count = cat === 'All' ? cars.length : cars.filter((c) => c.category === cat).length
                 const isActive = category === cat
                 return (

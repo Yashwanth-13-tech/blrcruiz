@@ -7,7 +7,7 @@ import { calculateDays, todayStr } from '../utils/pricing.js'
 import { getUserLocation, findNearestLocation } from '../utils/geolocation.js'
 
 export default function BookingSearch({ search, setSearch, onSearch }) {
-  const { locations } = useCars()
+  const { cars, locations } = useCars()
   const [rentalMode, setRentalMode] = useState('daily') // daily | monthly | airport
   const [geoLoading, setGeoLoading] = useState(false)
   const [geoStatus, setGeoStatus] = useState(null) // { type, message }
@@ -18,6 +18,12 @@ export default function BookingSearch({ search, setSearch, onSearch }) {
   const activeLocations = locations.length > 0
     ? locations.map((l) => l.name)
     : pickupLocations
+
+  // Dynamically extract categories that actually exist in the fleet
+  const dynamicCategories = React.useMemo(() => {
+    const rawCategories = Array.from(new Set(cars.map((c) => c.category).filter(Boolean)))
+    return ['All', ...rawCategories]
+  }, [cars])
 
   const update = (field) => (e) => {
     setSearch((prev) => ({ ...prev, [field]: e.target.value }))
@@ -181,7 +187,7 @@ export default function BookingSearch({ search, setSearch, onSearch }) {
               onChange={update('category')}
               className="input-field font-semibold"
             >
-              {CATEGORIES.map((cat) => (
+              {dynamicCategories.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat === 'All' ? 'All Vehicle Types' : cat}
                 </option>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   MessageSquare,
   Search,
@@ -20,12 +20,18 @@ import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 const STATUS_TABS = ['All', 'New', 'Contacted', 'Confirmed', 'Cancelled']
 
 export default function AdminInquiries() {
-  const { inquiries, updateInquiryStatus, deleteInquiry } = useCars()
+  const { inquiries, updateInquiryStatus, deleteInquiry, refreshData } = useCars()
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [selectedInquiry, setSelectedInquiry] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [notification, setNotification] = useState(null)
+
+  useEffect(() => {
+    if (typeof refreshData === 'function') {
+      refreshData()
+    }
+  }, [refreshData])
 
   const handleDeleteInquiry = async (inq) => {
     const confirmDelete = window.confirm(

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Sparkles,
   Shield,
@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   ArrowRight,
 } from 'lucide-react'
+import { useCars } from '../context/CarContext.jsx'
 
 const SHOWCASE_CARS = [
   {
@@ -49,13 +50,40 @@ const SHOWCASE_CARS = [
 ]
 
 export default function InteractiveHeroVisual({ onSelectModel }) {
+  const { cars } = useCars()
   const [activeCarIdx, setActiveCarIdx] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
   const [progress, setProgress] = useState(0)
 
+  // Dynamically select showcase cars from live inventory
+  const showcaseCars = useMemo(() => {
+    if (!cars || cars.length === 0) return SHOWCASE_CARS
+
+    const available = cars.filter((c) => c.available !== false)
+    const pool = available.length > 0 ? available : cars
+    const popular = pool.filter((c) => c.popular)
+    const selected = (popular.length >= 2 ? popular : pool).slice(0, 3)
+
+    return selected.map((car) => ({
+      id: String(car.id),
+      name: `${car.brand} ${car.model}`,
+      category: car.category || 'Hatchback',
+      rawCategory: car.category,
+      price: `₹${Number(car.pricePerDay).toLocaleString('en-IN')}/day`,
+      speed: `${car.seats || 5} Seater • ${car.transmission || 'Automatic'}`,
+      fuel: `${car.fuel || 'Petrol'} Engine`,
+      tag: car.popular ? 'Bangalore Favourite' : 'Available for Booking',
+      badge: `${car.brand} Fleet`,
+      image:
+        car.image ||
+        (Array.isArray(car.images) && car.images[0]) ||
+        'https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=1400&q=85',
+    }))
+  }, [cars])
+
   // Motion state driven by 60fps lerp
   const [motionState, setMotionState] = useState({
-    scale: 0.90,
+    scale: 0.9,
     translateY: 36,
     carInnerScale: 0.95,
     opacity: 0.92,
@@ -73,7 +101,8 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
   const targetMouse = useRef({ x: 0, y: 0 })
   const currentMouse = useRef({ x: 0, y: 0 })
 
-  const activeCar = SHOWCASE_CARS[activeCarIdx]
+  const safeIdx = activeCarIdx < showcaseCars.length ? activeCarIdx : 0
+  const activeCar = showcaseCars[safeIdx] || SHOWCASE_CARS[0]
 
   // Continuous Scroll Progress & Mouse Tracker with 60fps lerp
   useEffect(() => {
@@ -178,8 +207,12 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
   const mouseTranslateY = motionState.mouseY * 6 * motionState.scrollProgress
 
   const scrollToCars = () => {
-    const el = document.getElementById('cars')
-    if (el) el.scrollIntoView({ behavior: 'smooth' })
+    if (typeof onSelectModel === 'function' && activeCar?.rawCategory) {
+      onSelectModel(activeCar.rawCategory)
+    } else {
+      const el = document.getElementById('cars')
+      if (el) el.scrollIntoView({ behavior: 'smooth' })
+    }
   }
 
   return (
@@ -294,7 +327,7 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             {/* Category Switcher Tabs */}
             <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl">
-              {SHOWCASE_CARS.map((car, idx) => (
+              {showcaseCars.map((car, idx) => (
                 <button
                   key={car.id}
                   type="button"
@@ -303,7 +336,7 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
                     setProgress(0)
                   }}
                   className={`relative rounded-lg px-2.5 sm:px-3 py-1 text-[11px] font-bold transition-all ${
-                    activeCarIdx === idx
+                    safeIdx === idx
                       ? 'bg-white text-slate-900 shadow-2xs'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}

@@ -31,10 +31,22 @@ export const inquiryService = {
       if (res.ok) {
         const data = await res.json()
         if (data.success && Array.isArray(data.inquiries)) {
-          // Sync with local IndexedDB cache
-          for (const inq of data.inquiries) {
-            await putInStore('inquiries', inq)
+          // Sync with local IndexedDB cache: remove deleted inquiries
+          try {
+            const localInquiries = await getAllFromStore('inquiries')
+            const serverIds = new Set(data.inquiries.map((i) => String(i.id)))
+            for (const localInq of localInquiries) {
+              if (!serverIds.has(String(localInq.id))) {
+                await deleteFromStore('inquiries', localInq.id)
+              }
+            }
+            for (const inq of data.inquiries) {
+              await putInStore('inquiries', inq)
+            }
+          } catch (syncErr) {
+            console.warn('[InquiryService] IndexedDB sync notice:', syncErr.message)
           }
+
           return data.inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         }
       }
