@@ -25,8 +25,17 @@ export default function Hero({ onBrowseCategory }) {
           </div>
 
           {/* Main Heading */}
-          <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900 leading-[1.12]">
-            Premium Car Rentals in <span className="text-accent-500">Bangalore</span>
+          <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 leading-[1.15] sm:leading-[1.12]">
+            <span className="inline-block">
+              <span className="hero-word-reveal hero-word-1 mr-2 sm:mr-3">Car</span>
+              <span className="hero-word-reveal hero-word-2 mr-2 sm:mr-3">Rental</span>
+              <span className="hero-word-reveal hero-word-3 mr-2 sm:mr-3 text-slate-800">in</span>
+            </span>{' '}
+            <span className="inline-block">
+              <span className="bangalore-highlight">
+                Bangalore
+              </span>
+            </span>
           </h1>
 
           {/* Concise Subtitle (1 sentence) */}
