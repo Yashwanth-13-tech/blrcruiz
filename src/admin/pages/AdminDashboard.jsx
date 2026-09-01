@@ -184,42 +184,48 @@ export default function AdminDashboard({ setActiveTab }) {
           </div>
 
           <div className="divide-y divide-charcoal-900/5 mt-2">
-            {cars.slice(0, 5).map((car) => (
-              <div key={car.id} className="flex items-center justify-between py-3">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={car.image}
-                    alt={car.model}
-                    className="h-12 w-16 rounded-xl object-cover ring-1 ring-charcoal-900/10"
-                  />
-                  <div>
-                    <p className="font-display text-sm font-bold text-charcoal-900">
-                      {car.brand} {car.model}
-                    </p>
-                    <div className="flex items-center gap-2 text-[11px] text-charcoal-500">
-                      <span>{car.category}</span>
-                      <span>•</span>
-                      <span>{car.transmission}</span>
-                      <span>•</span>
-                      <span>{car.seats} seats</span>
+            {cars.length === 0 ? (
+              <div className="py-8 text-center text-xs text-charcoal-400">
+                No vehicles in inventory yet. Click &quot;Add New Car&quot; to list your first vehicle.
+              </div>
+            ) : (
+              cars.slice(0, 5).map((car) => (
+                <div key={car.id} className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={car.image}
+                      alt={car.model}
+                      className="h-12 w-16 rounded-xl object-cover ring-1 ring-charcoal-900/10"
+                    />
+                    <div>
+                      <p className="font-display text-sm font-bold text-charcoal-900">
+                        {car.brand} {car.model}
+                      </p>
+                      <div className="flex items-center gap-2 text-[11px] text-charcoal-500">
+                        <span>{car.category}</span>
+                        <span>•</span>
+                        <span>{car.transmission}</span>
+                        <span>•</span>
+                        <span>{car.seats} seats</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="text-right">
-                  <p className="font-display text-sm font-bold text-charcoal-900">
-                    {formatPrice(car.pricePerDay)}<span className="text-[10px] font-normal text-charcoal-400">/day</span>
-                  </p>
-                  <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      car.available ? 'bg-emerald-100 text-emerald-700' : 'bg-charcoal-200 text-charcoal-700'
-                    }`}
-                  >
-                    {car.available ? 'Available' : 'Booked'}
-                  </span>
+                  <div className="text-right">
+                    <p className="font-display text-sm font-bold text-charcoal-900">
+                      {formatPrice(car.pricePerDay)}<span className="text-[10px] font-normal text-charcoal-400">/day</span>
+                    </p>
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        car.available ? 'bg-emerald-100 text-emerald-700' : 'bg-charcoal-200 text-charcoal-700'
+                      }`}
+                    >
+                      {car.available ? 'Available' : 'Booked'}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 

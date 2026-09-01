@@ -1,5 +1,3 @@
-import { cars as initialCars } from '../data/cars.js'
-
 const DB_NAME = 'drivora_db'
 const DB_VERSION = 2
 const CARS_STORE = 'cars'
@@ -49,84 +47,17 @@ function openDB() {
 }
 
 /**
- * Initialize and seed initial data if database is empty
+ * Initialize clean database stores without mock or seed data
  */
 export async function initDB() {
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction([CARS_STORE, INQUIRIES_STORE, SETTINGS_STORE], 'readwrite')
-    const carStore = tx.objectStore(CARS_STORE)
-    const inqStore = tx.objectStore(INQUIRIES_STORE)
     const settingsStore = tx.objectStore(SETTINGS_STORE)
 
-    // Seed initial cars ONLY on initial setup, never on refresh after user deletion
-    const carInitFlagReq = settingsStore.get('cars_initialized')
-    carInitFlagReq.onsuccess = () => {
-      if (!carInitFlagReq.result) {
-        settingsStore.put({ key: 'cars_initialized', value: true, timestamp: new Date().toISOString() })
-        const countReq = carStore.count()
-        countReq.onsuccess = () => {
-          if (countReq.result === 0) {
-            initialCars.forEach((car) => {
-              carStore.add({
-                ...car,
-                images: car.images || [car.image],
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              })
-            })
-          }
-        }
-      }
-    }
-
-    // Seed sample inquiries ONLY on initial setup, never on refresh after user deletion
-    const initFlagReq = settingsStore.get('inquiries_initialized')
-    initFlagReq.onsuccess = () => {
-      if (!initFlagReq.result) {
-        settingsStore.put({ key: 'inquiries_initialized', value: true, timestamp: new Date().toISOString() })
-        const inqCountReq = inqStore.count()
-        inqCountReq.onsuccess = () => {
-          if (inqCountReq.result === 0) {
-            const sampleInquiries = [
-              {
-                id: 'inq_1',
-                name: 'Rohan Sharma',
-                phone: '9845012345',
-                email: 'rohan.sharma@example.com',
-                carName: 'Hyundai Creta',
-                carId: 6,
-                pickupLocation: 'Kempegowda International Airport',
-                pickupDate: '2026-09-01',
-                returnDate: '2026-09-04',
-                days: 3,
-                estimatedTotal: '₹8,397',
-                message: 'Need the car delivered to Terminal 2 arrival gate.',
-                status: 'New',
-                createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-              },
-              {
-                id: 'inq_2',
-                name: 'Ananya Deshmukh',
-                phone: '9988776655',
-                email: 'ananya.d@example.com',
-                carName: 'BMW 3 Series',
-                carId: 10,
-                pickupLocation: 'Indiranagar',
-                pickupDate: '2026-09-05',
-                returnDate: '2026-09-07',
-                days: 2,
-                estimatedTotal: '₹15,998',
-                message: 'Looking for a clean luxury car for client visit.',
-                status: 'Contacted',
-                createdAt: new Date(Date.now() - 86400000).toISOString(),
-              },
-            ]
-            sampleInquiries.forEach((inq) => inqStore.add(inq))
-          }
-        }
-      }
-    }
+    // Mark as initialized so no automatic seeding ever runs
+    settingsStore.put({ key: 'cars_initialized', value: true, timestamp: new Date().toISOString() })
+    settingsStore.put({ key: 'inquiries_initialized', value: true, timestamp: new Date().toISOString() })
 
     tx.oncomplete = () => resolve(true)
     tx.onerror = () => reject(tx.error)
@@ -190,23 +121,22 @@ export async function deleteFromStore(storeName, id) {
 }
 
 /**
- * Reset store to initial seed data
+ * Clear all items from a store
  */
-export async function resetCarsStore() {
+export async function clearStore(storeName) {
   const db = await openDB()
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(CARS_STORE, 'readwrite')
-    const store = tx.objectStore(CARS_STORE)
-    store.clear()
-    initialCars.forEach((car) => {
-      store.add({
-        ...car,
-        images: car.images || [car.image],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-    })
-    tx.oncomplete = () => resolve(true)
-    tx.onerror = () => reject(tx.error)
+    const tx = db.transaction(storeName, 'readwrite')
+    const store = tx.objectStore(storeName)
+    const req = store.clear()
+    req.onsuccess = () => resolve(true)
+    req.onerror = () => reject(req.error)
   })
+}
+
+/**
+ * Reset store to completely empty
+ */
+export async function resetCarsStore() {
+  return await clearStore(CARS_STORE)
 }

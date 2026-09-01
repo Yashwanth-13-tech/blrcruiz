@@ -457,23 +457,29 @@ export default function CarInventory({
         ) : filteredCars.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-14 px-6 text-center shadow-xs">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-50 text-accent-600 mb-3">
-              <MapPin size={24} />
+              <Car size={24} />
             </div>
             <h3 className="font-display text-base font-extrabold text-slate-900">
-              No vehicles found at this location or filter criteria
+              {cars.length === 0
+                ? 'Fleet Catalog Updating'
+                : 'No vehicles found for selected filters'}
             </h3>
             <p className="mt-1.5 text-xs text-slate-500 max-w-md">
-              {locationFilter !== 'All'
+              {cars.length === 0
+                ? 'We are currently updating our fleet inventory. For instant booking and custom vehicle requirements, please contact our Bangalore desk directly.'
+                : locationFilter !== 'All'
                 ? `No cars are currently assigned to ${locationMap[locationFilter] || 'this location'}. Try switching to "All Bangalore Locations" or doorstep delivery.`
                 : 'Try adjusting your search criteria or resetting filters.'}
             </p>
-            <button
-              onClick={resetFilters}
-              className="btn-accent mt-5 text-xs !py-2.5 !px-5"
-            >
-              <RotateCcw size={13} />
-              <span>Show All {cars.length} Cars in Bangalore</span>
-            </button>
+            {cars.length > 0 && (
+              <button
+                onClick={resetFilters}
+                className="btn-accent mt-5 text-xs !py-2.5 !px-5"
+              >
+                <RotateCcw size={13} />
+                <span>Show All {cars.length} Cars in Bangalore</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

@@ -57,7 +57,7 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
 
   // Dynamically select showcase cars from live inventory
   const showcaseCars = useMemo(() => {
-    if (!cars || cars.length === 0) return SHOWCASE_CARS
+    if (!cars || cars.length === 0) return []
 
     const available = cars.filter((c) => c.available !== false)
     const pool = available.length > 0 ? available : cars
@@ -101,8 +101,8 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
   const targetMouse = useRef({ x: 0, y: 0 })
   const currentMouse = useRef({ x: 0, y: 0 })
 
-  const safeIdx = activeCarIdx < showcaseCars.length ? activeCarIdx : 0
-  const activeCar = showcaseCars[safeIdx] || SHOWCASE_CARS[0]
+  const safeIdx = (showcaseCars.length > 0 && activeCarIdx < showcaseCars.length) ? activeCarIdx : 0
+  const activeCar = showcaseCars[safeIdx] || null
 
   // Continuous Scroll Progress & Mouse Tracker with 60fps lerp
   useEffect(() => {
@@ -213,6 +213,36 @@ export default function InteractiveHeroVisual({ onSelectModel }) {
       const el = document.getElementById('cars')
       if (el) el.scrollIntoView({ behavior: 'smooth' })
     }
+  }
+
+  if (!activeCar || showcaseCars.length === 0) {
+    return (
+      <div
+        ref={containerRef}
+        className="relative mx-auto mt-4 sm:mt-6 max-w-4xl px-3 sm:px-6 select-none"
+      >
+        <div className="relative z-10 mx-auto rounded-3xl border border-slate-200/90 bg-gradient-to-b from-white/95 via-white/85 to-slate-50/90 p-6 sm:p-8 text-center shadow-md">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-50 text-accent-600 mx-auto mb-3">
+            <ShieldCheck size={24} />
+          </div>
+          <h3 className="font-display text-lg sm:text-xl font-extrabold text-slate-900">
+            Bangalore's Premier Self-Drive Car Rental
+          </h3>
+          <p className="mt-2 text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+            10+ pickup hubs across Bangalore • Sanitized vehicles • Instant booking & doorstep delivery.
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            <button
+              onClick={scrollToCars}
+              className="btn-accent text-xs !py-2.5 !px-4"
+            >
+              <span>Explore Fleet</span>
+              <ArrowRight size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
