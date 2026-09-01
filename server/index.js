@@ -60,7 +60,8 @@ const corsOptions = {
 }
 
 app.use(cors(corsOptions))
-app.use(express.json())
+app.use(express.json({ limit: '15mb' }))
+app.use(express.urlencoded({ extended: true, limit: '15mb' }))
 
 // Ensure all /api responses return JSON content-type
 app.use('/api', (req, res, next) => {
@@ -1078,7 +1079,14 @@ app.use((req, res, next) => {
 // Global error handler (always returns JSON)
 app.use((err, req, res, next) => {
   console.error('[API Server Error]:', err)
-  return res.status(500).json({
+  const status = err.status || err.statusCode || 500
+  if (status === 413 || err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'Upload payload is too large. Image files exceeded the maximum allowed limit.',
+    })
+  }
+  return res.status(status).json({
     success: false,
     message: err.message || 'Internal server error',
   })
