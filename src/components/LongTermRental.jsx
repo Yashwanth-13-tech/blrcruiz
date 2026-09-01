@@ -14,7 +14,7 @@ export default function LongTermRental() {
     <section className="bg-slate-50/50 py-16 sm:py-20 border-t border-slate-200/80">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12">
-          
+
           {/* Left Text */}
           <div className="lg:col-span-7">
             <div className="flex items-center gap-2 mb-2.5">
@@ -71,7 +71,7 @@ export default function LongTermRental() {
                   Monthly Subscription Plan
                 </span>
                 <p className="font-display text-sm font-extrabold text-slate-900 mt-0.5">
-                  Hatchbacks from ₹28,000 / month
+                  Starting from ₹50,000 / month
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   Includes insurance, free servicing &amp; 3000 KMs/month.

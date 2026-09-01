@@ -48,4 +48,6 @@ dist-ssr/
 server/bookings_data.json
 server/inquiries_data.json
 server/cars_data.json
+server/sessions_data.json
+
 

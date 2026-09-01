@@ -92,7 +92,7 @@ export const carService = {
     await ensureDB()
     const token = authService.getToken()
 
-    // 1. Try backend creation
+    // Send POST request to backend API
     try {
       const res = await fetch(apiUrl('/api/cars'), {
         method: 'POST',
@@ -102,6 +102,7 @@ export const carService = {
         },
         body: JSON.stringify(carData),
       })
+
       if (res.ok) {
         const data = await res.json()
         if (data.success && data.car) {
@@ -113,51 +114,12 @@ export const carService = {
         if (res.status === 401) {
           throw new Error('Unauthorized. Please log in again to add vehicles.')
         }
-        if (errData.message) {
-          throw new Error(errData.message)
-        }
+        throw new Error(errData.message || `Failed to add vehicle (Status: ${res.status})`)
       }
     } catch (err) {
-      if (err.message?.includes('Unauthorized') || err.message?.includes('required')) {
-        throw err
-      }
-      console.warn('[CarService] Server add notice:', err.message)
+      console.error('[CarService] Failed to add vehicle to backend:', err)
+      throw err
     }
-
-    // 2. Fallback local addition
-    const existing = await getAllFromStore('cars')
-    const maxId = existing.reduce((max, c) => (typeof c.id === 'number' && c.id > max ? c.id : max), 0)
-    const newId = maxId + 1
-
-    const images = Array.isArray(carData.images) && carData.images.length > 0
-      ? carData.images
-      : [carData.image || 'https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80']
-
-    const newCar = {
-      ...carData,
-      id: newId,
-      brand: carData.brand.trim(),
-      model: carData.model.trim(),
-      category: carData.category || 'Hatchback',
-      year: Number(carData.year) || new Date().getFullYear(),
-      seats: Number(carData.seats) || 5,
-      transmission: carData.transmission || 'Automatic',
-      fuel: carData.fuel || 'Petrol',
-      ac: Boolean(carData.ac ?? true),
-      pricePerDay: Number(carData.pricePerDay) || 1500,
-      rating: Number(carData.rating) || 4.8,
-      popular: Boolean(carData.popular ?? false),
-      available: Boolean(carData.available ?? true),
-      image: images[0],
-      images: images,
-      locations: Array.isArray(carData.locations) ? carData.locations : [],
-      description: carData.description?.trim() || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    await putInStore('cars', newCar)
-    return newCar
   },
 
   /**
@@ -169,7 +131,7 @@ export const carService = {
     const carId = isNaN(numericId) ? id : numericId
     const token = authService.getToken()
 
-    // 1. Try backend update
+    // Send PUT request to backend API
     try {
       const res = await fetch(apiUrl(`/api/cars/${encodeURIComponent(id)}`), {
         method: 'PUT',
@@ -179,6 +141,7 @@ export const carService = {
         },
         body: JSON.stringify(updateData),
       })
+
       if (res.ok) {
         const data = await res.json()
         if (data.success && data.car) {
@@ -190,48 +153,12 @@ export const carService = {
         if (res.status === 401) {
           throw new Error('Unauthorized. Please log in again to update vehicles.')
         }
-        if (errData.message) {
-          throw new Error(errData.message)
-        }
+        throw new Error(errData.message || `Failed to update vehicle (Status: ${res.status})`)
       }
     } catch (err) {
-      if (err.message?.includes('Unauthorized')) {
-        throw err
-      }
-      console.warn('[CarService] Server update notice:', err.message)
+      console.error('[CarService] Failed to update vehicle on backend:', err)
+      throw err
     }
-
-    // 2. Fallback local update
-    const existing = await getByIdFromStore('cars', carId)
-    if (!existing) {
-      throw new Error(`Car with ID ${id} not found`)
-    }
-
-    const images = Array.isArray(updateData.images) && updateData.images.length > 0
-      ? updateData.images
-      : (updateData.image ? [updateData.image] : existing.images || [existing.image])
-
-    const updatedCar = {
-      ...existing,
-      ...updateData,
-      id: carId,
-      brand: updateData.brand ? updateData.brand.trim() : existing.brand,
-      model: updateData.model ? updateData.model.trim() : existing.model,
-      year: updateData.year !== undefined ? Number(updateData.year) : existing.year,
-      seats: updateData.seats !== undefined ? Number(updateData.seats) : existing.seats,
-      pricePerDay: updateData.pricePerDay !== undefined ? Number(updateData.pricePerDay) : existing.pricePerDay,
-      rating: updateData.rating !== undefined ? Number(updateData.rating) : existing.rating,
-      popular: updateData.popular !== undefined ? Boolean(updateData.popular) : existing.popular,
-      available: updateData.available !== undefined ? Boolean(updateData.available) : existing.available,
-      ac: updateData.ac !== undefined ? Boolean(updateData.ac) : existing.ac,
-      image: images[0] || existing.image,
-      images: images,
-      locations: Array.isArray(updateData.locations) ? updateData.locations : (existing.locations || []),
-      updatedAt: new Date().toISOString(),
-    }
-
-    await putInStore('cars', updatedCar)
-    return updatedCar
   },
 
   /**
@@ -243,7 +170,7 @@ export const carService = {
     const carId = isNaN(numericId) ? id : numericId
     const token = authService.getToken()
 
-    // 1. Send DELETE request to backend server
+    // Send DELETE request to backend server
     try {
       const res = await fetch(apiUrl(`/api/cars/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -258,7 +185,7 @@ export const carService = {
           const errData = await res.json()
           if (errData.message) errMessage = errData.message
         } catch {
-          // ignore parse error
+          // ignore
         }
         if (res.status === 401) {
           throw new Error('Unauthorized. Please log in again to delete vehicles.')
@@ -268,13 +195,11 @@ export const carService = {
         }
       }
     } catch (err) {
-      if (err.message?.includes('Unauthorized') || err.message?.includes('Access denied')) {
-        throw err
-      }
-      console.warn('[CarService] Server delete notice:', err.message)
+      console.error('[CarService] Failed to delete vehicle on backend:', err)
+      throw err
     }
 
-    // 2. Permanently remove from local IndexedDB cache
+    // Permanently remove from local IndexedDB cache
     await deleteFromStore('cars', carId)
     return true
   },

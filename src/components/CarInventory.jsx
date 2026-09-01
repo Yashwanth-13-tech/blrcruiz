@@ -41,9 +41,9 @@ export default function CarInventory({
   onClearFavoritesFilter,
 }) {
   const { cars, locations, loading } = useCars()
-  const [category, setCategory] = useState(search.category || 'All')
+  const [category, setCategory] = useState(search?.category || 'All')
   const [transmission, setTransmission] = useState('All Transmissions')
-  const [locationFilter, setLocationFilter] = useState(search.pickupLocation || 'All')
+  const [locationFilter, setLocationFilter] = useState('All')
   const [sortBy, setSortBy] = useState('popular')
   const [query, setQuery] = useState('')
   
@@ -67,12 +67,18 @@ export default function CarInventory({
 
   // Keep category/location filter in sync if user selected from Search
   React.useEffect(() => {
-    if (search.category) setCategory(search.category)
-    if (search.pickupLocation && search.pickupLocation !== 'All Locations') {
-      const matched = locations.find((l) => l.name.toLowerCase().includes(search.pickupLocation.toLowerCase()))
-      if (matched) setLocationFilter(matched.id)
+    if (search?.category) setCategory(search.category)
+    if (!search?.pickupLocation || search.pickupLocation === 'All Locations' || search.pickupLocation === 'All') {
+      setLocationFilter('All')
+    } else {
+      const matched = locations.find(
+        (l) => l.id === search.pickupLocation || l.name.toLowerCase().includes(search.pickupLocation.toLowerCase())
+      )
+      if (matched) {
+        setLocationFilter(matched.id)
+      }
     }
-  }, [search.searchTrigger, search.category, search.pickupLocation, locations])
+  }, [search?.searchTrigger, search?.category, search?.pickupLocation, locations])
 
   React.useEffect(() => {
     if (onlyFavoritesFilter) setSavedOnly(true)
@@ -122,15 +128,22 @@ export default function CarInventory({
 
       // Transmission match
       const matchesTransmission =
-        transmission === 'All Transmissions' || car.transmission.toLowerCase().includes(transmission.toLowerCase())
+        transmission === 'All Transmissions' ||
+        (car.transmission || '').toLowerCase().includes(transmission.toLowerCase())
 
       // Location match
       let matchesLocation = true
       if (locationFilter !== 'All') {
         if (Array.isArray(car.locations) && car.locations.length > 0) {
-          matchesLocation = car.locations.includes(locationFilter)
+          matchesLocation =
+            car.locations.includes(locationFilter) ||
+            car.locations.some((lid) => {
+              const locObj = locations.find((l) => l.id === lid || l.name === lid)
+              return locObj && (locObj.id === locationFilter || locObj.name.toLowerCase() === locationFilter.toLowerCase())
+            })
         } else {
-          matchesLocation = false
+          // If no specific location is assigned, car is available citywide
+          matchesLocation = true
         }
       }
 
@@ -143,12 +156,12 @@ export default function CarInventory({
       const q = query.trim().toLowerCase()
       const matchesQuery =
         !q ||
-        car.brand.toLowerCase().includes(q) ||
-        car.model.toLowerCase().includes(q) ||
-        car.category.toLowerCase().includes(q) ||
-        car.transmission.toLowerCase().includes(q) ||
-        car.fuel.toLowerCase().includes(q) ||
-        String(car.year).includes(q)
+        (car.brand || '').toLowerCase().includes(q) ||
+        (car.model || '').toLowerCase().includes(q) ||
+        (car.category || '').toLowerCase().includes(q) ||
+        (car.transmission || '').toLowerCase().includes(q) ||
+        (car.fuel || '').toLowerCase().includes(q) ||
+        String(car.year || '').includes(q)
 
       return matchesCategory && matchesTransmission && matchesLocation && matchesQuery
     })

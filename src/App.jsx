@@ -30,7 +30,7 @@ const FAVORITES_KEY = 'drivora_favorites'
 function PublicWebsite() {
   const { cars } = useCars()
   const [search, setSearch] = useState({
-    pickupLocation: pickupLocations[0],
+    pickupLocation: 'All Locations',
     pickupDate: '',
     returnDate: '',
     category: 'All',

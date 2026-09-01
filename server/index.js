@@ -161,8 +161,44 @@ function saveCars(cars) {
 
 let carsInventory = loadCars()
 
-// In-memory active admin sessions map
-const activeAdminSessions = new Map()
+// File-backed active admin sessions with in-memory caching
+const SESSIONS_FILE = path.join(__dirname, 'sessions_data.json')
+
+function loadSessions() {
+  const map = new Map()
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const data = fs.readFileSync(SESSIONS_FILE, 'utf-8')
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) {
+        const now = Date.now()
+        for (const s of parsed) {
+          if (s && s.token && s.expiresAt > now) {
+            map.set(s.token, s)
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not read sessions file:', err.message)
+  }
+  return map
+}
+
+function saveSessions(sessionsMap) {
+  try {
+    const list = Array.from(sessionsMap.values()).filter((s) => s && s.expiresAt > Date.now())
+    const dir = path.dirname(SESSIONS_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not persist sessions to disk:', err.message)
+  }
+}
+
+const activeAdminSessions = loadSessions()
 
 // --- Admin Authentication API Endpoints ---
 app.post('/api/auth/login', (req, res) => {
@@ -212,6 +248,7 @@ app.post('/api/auth/login', (req, res) => {
     }
 
     activeAdminSessions.set(token, sessionData)
+    saveSessions(activeAdminSessions)
 
     return res.status(200).json({
       success: true,
@@ -244,6 +281,7 @@ app.get('/api/auth/verify', (req, res) => {
     const session = activeAdminSessions.get(token)
     if (!session || session.expiresAt < Date.now()) {
       activeAdminSessions.delete(token)
+      saveSessions(activeAdminSessions)
       return res.status(401).json({
         success: false,
         valid: false,
@@ -266,6 +304,7 @@ app.post('/api/auth/logout', (req, res) => {
   const token = authHeader.replace(/^Bearer\s+/i, '').trim()
   if (token) {
     activeAdminSessions.delete(token)
+    saveSessions(activeAdminSessions)
   }
   return res.status(200).json({ success: true, message: 'Logged out successfully.' })
 })

@@ -21,6 +21,13 @@ const CATEGORIES = ['Hatchback', 'Sedan', 'SUV', 'Luxury']
 const TRANSMISSIONS = ['Automatic', 'Manual']
 const FUELS = ['Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid']
 
+const CATEGORY_DEFAULT_IMAGES = {
+  Hatchback: 'https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80',
+  Sedan: 'https://images.unsplash.com/photo-1616422285623-13ff0162193c?auto=format&fit=crop&w=800&q=80',
+  SUV: 'https://images.unsplash.com/photo-1669882705938-1493a3141dd6?auto=format&fit=crop&w=800&q=80',
+  Luxury: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=800&q=80',
+}
+
 export default function CarFormModal({ car, onSave, onClose, loading }) {
   const isEditing = Boolean(car && car.id)
   const { locations: allLocations } = useCars()
@@ -108,7 +115,6 @@ export default function CarFormModal({ car, onSave, onClose, loading }) {
     if (!form.model.trim()) next.model = 'Model is required (e.g. Creta, Fortuner)'
     if (!form.pricePerDay || Number(form.pricePerDay) <= 0) next.pricePerDay = 'Valid daily rate is required'
     if (!form.seats || Number(form.seats) < 1) next.seats = 'Enter valid seat count'
-    if (form.images.length === 0) next.images = 'Please upload or add at least one vehicle image'
 
     setErrors(next)
 
@@ -116,7 +122,6 @@ export default function CarFormModal({ car, onSave, onClose, loading }) {
     if (Object.keys(next).length > 0) {
       if (next.brand || next.model) setActiveTab('basic')
       else if (next.pricePerDay || next.seats) setActiveTab('specs')
-      else if (next.images) setActiveTab('images')
       return false
     }
     return true
@@ -125,7 +130,14 @@ export default function CarFormModal({ car, onSave, onClose, loading }) {
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!validate()) return
-    onSave(form)
+    const finalImages = form.images.length > 0
+      ? form.images
+      : [CATEGORY_DEFAULT_IMAGES[form.category] || CATEGORY_DEFAULT_IMAGES.Hatchback]
+    onSave({
+      ...form,
+      images: finalImages,
+      image: finalImages[0],
+    })
   }
 
   const tabs = [
