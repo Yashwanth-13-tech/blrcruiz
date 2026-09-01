@@ -59,18 +59,24 @@ export async function initDB() {
     const inqStore = tx.objectStore(INQUIRIES_STORE)
     const settingsStore = tx.objectStore(SETTINGS_STORE)
 
-    const countReq = carStore.count()
-    countReq.onsuccess = () => {
-      if (countReq.result === 0) {
-        // Seed initial cars with images array support
-        initialCars.forEach((car) => {
-          carStore.add({
-            ...car,
-            images: car.images || [car.image],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          })
-        })
+    // Seed initial cars ONLY on initial setup, never on refresh after user deletion
+    const carInitFlagReq = settingsStore.get('cars_initialized')
+    carInitFlagReq.onsuccess = () => {
+      if (!carInitFlagReq.result) {
+        settingsStore.put({ key: 'cars_initialized', value: true, timestamp: new Date().toISOString() })
+        const countReq = carStore.count()
+        countReq.onsuccess = () => {
+          if (countReq.result === 0) {
+            initialCars.forEach((car) => {
+              carStore.add({
+                ...car,
+                images: car.images || [car.image],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              })
+            })
+          }
+        }
       }
     }
 

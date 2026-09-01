@@ -166,6 +166,293 @@ function saveInquiries(inquiries) {
 
 let confirmedInquiries = loadInquiries()
 
+// In-memory / file-backed car inventory storage with graceful fallback
+const CARS_FILE = path.join(__dirname, 'cars_data.json')
+
+const DEFAULT_CARS = [
+  {
+    id: 1,
+    brand: 'Maruti Suzuki',
+    model: 'Swift',
+    category: 'Hatchback',
+    year: 2024,
+    seats: 5,
+    transmission: 'Manual',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 1499,
+    rating: 4.6,
+    popular: true,
+    available: true,
+    locations: ['loc_koramangala', 'loc_indiranagar', 'loc_jayanagar'],
+    image: 'https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80'],
+    description: 'Agile and fuel-efficient hatchback designed for effortless city navigation.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    brand: 'Maruti Suzuki',
+    model: 'Baleno',
+    category: 'Hatchback',
+    year: 2024,
+    seats: 5,
+    transmission: 'Manual',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 1699,
+    rating: 4.5,
+    popular: false,
+    available: true,
+    locations: ['loc_hsr', 'loc_electronic_city', 'loc_koramangala'],
+    image: 'https://images.unsplash.com/photo-1600661653561-629509216228?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1600661653561-629509216228?auto=format&fit=crop&w=800&q=80'],
+    description: 'Spacious premium hatchback with comfortable cabin space for daily commutes.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 3,
+    brand: 'Hyundai',
+    model: 'i20',
+    category: 'Hatchback',
+    year: 2023,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 1799,
+    rating: 4.6,
+    popular: false,
+    available: true,
+    locations: ['loc_whitefield', 'loc_marathahalli', 'loc_indiranagar'],
+    image: 'https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&w=800&q=80'],
+    description: 'Refined automatic hatchback with modern infotainment and smooth handling.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 4,
+    brand: 'Honda',
+    model: 'City',
+    category: 'Sedan',
+    year: 2024,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 2099,
+    rating: 4.7,
+    popular: true,
+    available: true,
+    locations: ['loc_airport', 'loc_indiranagar', 'loc_mg_road'],
+    image: 'https://images.unsplash.com/photo-1616422285623-13ff0162193c?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1616422285623-13ff0162193c?auto=format&fit=crop&w=800&q=80'],
+    description: 'Executive sedan with generous legroom and boot space for highway and business travel.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 5,
+    brand: 'Hyundai',
+    model: 'Verna',
+    category: 'Sedan',
+    year: 2024,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 2199,
+    rating: 4.6,
+    popular: false,
+    available: true,
+    locations: ['loc_airport', 'loc_whitefield', 'loc_hebbal'],
+    image: 'https://images.unsplash.com/photo-1622194993926-c3a2e7b57d21?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1622194993926-c3a2e7b57d21?auto=format&fit=crop&w=800&q=80'],
+    description: 'Sharp styling with turbocharged performance and premium highway comfort.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 6,
+    brand: 'Hyundai',
+    model: 'Creta',
+    category: 'SUV',
+    year: 2025,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 2799,
+    rating: 4.8,
+    popular: true,
+    available: true,
+    locations: ['loc_koramangala', 'loc_hsr', 'loc_whitefield', 'loc_airport'],
+    image: 'https://images.unsplash.com/photo-1669882705938-1493a3141dd6?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1669882705938-1493a3141dd6?auto=format&fit=crop&w=800&q=80'],
+    description: 'Commanding SUV with panoramic sunroof, high ground clearance, and automatic drive.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 7,
+    brand: 'Kia',
+    model: 'Seltos',
+    category: 'SUV',
+    year: 2024,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Diesel',
+    ac: true,
+    pricePerDay: 2999,
+    rating: 4.7,
+    popular: false,
+    available: true,
+    locations: ['loc_whitefield', 'loc_marathahalli', 'loc_hebbal'],
+    image: 'https://images.unsplash.com/photo-1606016159991-8b5d5c9bf982?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1606016159991-8b5d5c9bf982?auto=format&fit=crop&w=800&q=80'],
+    description: 'Feature-packed diesel SUV tuned for long road trips and weekend getaways.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 8,
+    brand: 'Toyota',
+    model: 'Innova Crysta',
+    category: 'SUV',
+    year: 2023,
+    seats: 7,
+    transmission: 'Manual',
+    fuel: 'Diesel',
+    ac: true,
+    pricePerDay: 3499,
+    rating: 4.8,
+    popular: true,
+    available: true,
+    locations: ['loc_airport', 'loc_mg_road', 'loc_indiranagar', 'loc_hsr'],
+    image: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=800&q=80'],
+    description: 'Reliable 7-seater MPV offering unmatched comfort for family road trips.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 9,
+    brand: 'Toyota',
+    model: 'Fortuner',
+    category: 'SUV',
+    year: 2024,
+    seats: 7,
+    transmission: 'Automatic',
+    fuel: 'Diesel',
+    ac: true,
+    pricePerDay: 5499,
+    rating: 4.9,
+    popular: false,
+    available: true,
+    locations: ['loc_airport', 'loc_koramangala', 'loc_hebbal'],
+    image: 'https://images.unsplash.com/photo-1591438639910-6b1c1b8f3e6a?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1591438639910-6b1c1b8f3e6a?auto=format&fit=crop&w=800&q=80'],
+    description: 'Full-size 4x4 SUV built for tough terrains and commanding road presence.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 10,
+    brand: 'BMW',
+    model: '3 Series',
+    category: 'Luxury',
+    year: 2024,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 7999,
+    rating: 4.9,
+    popular: false,
+    available: true,
+    locations: ['loc_airport', 'loc_indiranagar', 'loc_mg_road'],
+    image: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=800&q=80'],
+    description: 'Precision German performance and luxury cockpit for business and VIP travel.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 11,
+    brand: 'Mercedes-Benz',
+    model: 'C-Class',
+    category: 'Luxury',
+    year: 2024,
+    seats: 5,
+    transmission: 'Automatic',
+    fuel: 'Petrol',
+    ac: true,
+    pricePerDay: 9499,
+    rating: 5.0,
+    popular: true,
+    available: true,
+    locations: ['loc_airport', 'loc_mg_road', 'loc_koramangala'],
+    image: 'https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?auto=format&fit=crop&w=800&q=80'],
+    description: 'Sophisticated luxury sedan with whisper-quiet cabin and refined comfort.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 12,
+    brand: 'Maruti Suzuki',
+    model: 'Ertiga',
+    category: 'SUV',
+    year: 2023,
+    seats: 7,
+    transmission: 'Manual',
+    fuel: 'CNG',
+    ac: true,
+    pricePerDay: 2299,
+    rating: 4.5,
+    popular: false,
+    available: true,
+    locations: ['loc_electronic_city', 'loc_jayanagar', 'loc_hsr'],
+    image: 'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=800&q=80'],
+    description: 'Economical 7-seater with CNG efficiency for group outings and city travel.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+]
+
+function loadCars() {
+  try {
+    if (fs.existsSync(CARS_FILE)) {
+      const data = fs.readFileSync(CARS_FILE, 'utf-8')
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not read cars file, initializing defaults:', err.message)
+  }
+
+  saveCars(DEFAULT_CARS)
+  return [...DEFAULT_CARS]
+}
+
+function saveCars(cars) {
+  try {
+    const dir = path.dirname(CARS_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(CARS_FILE, JSON.stringify(cars, null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[Storage] Notice: Could not persist cars to disk (Render ephemeral storage), retained in memory cache:', err.message)
+  }
+}
+
+let carsInventory = loadCars()
+
 // In-memory active admin sessions map
 const activeAdminSessions = new Map()
 
@@ -681,6 +968,234 @@ app.delete('/api/inquiries/:id', (req, res) => {
     message: 'Inquiry permanently deleted.',
     deletedId: id,
     inquiry: deletedInquiry,
+  })
+})
+
+/**
+ * GET /api/cars
+ * Retrieve all vehicles in inventory (sorted by ID)
+ */
+app.get('/api/cars', (req, res) => {
+  return res.status(200).json({
+    success: true,
+    cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
+  })
+})
+
+/**
+ * GET /api/cars/:id
+ * Retrieve a single vehicle by ID
+ */
+app.get('/api/cars/:id', (req, res) => {
+  const { id } = req.params
+  const car = carsInventory.find((c) => String(c.id) === String(id))
+  if (!car) {
+    return res.status(404).json({
+      success: false,
+      message: `Vehicle with ID ${id} not found.`,
+    })
+  }
+  return res.status(200).json({
+    success: true,
+    car,
+  })
+})
+
+/**
+ * POST /api/cars
+ * Add a new vehicle to inventory (admin protected)
+ */
+app.post('/api/cars', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  try {
+    const data = req.body || {}
+    if (!data.brand || !data.model) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vehicle brand and model are required.',
+      })
+    }
+
+    const maxId = carsInventory.reduce((max, c) => (typeof c.id === 'number' && c.id > max ? c.id : max), 0)
+    const newId = maxId + 1
+
+    const images = Array.isArray(data.images) && data.images.length > 0
+      ? data.images
+      : [data.image || 'https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80']
+
+    const newCar = {
+      ...data,
+      id: newId,
+      brand: String(data.brand).trim(),
+      model: String(data.model).trim(),
+      category: data.category || 'Hatchback',
+      year: Number(data.year) || new Date().getFullYear(),
+      seats: Number(data.seats) || 5,
+      transmission: data.transmission || 'Automatic',
+      fuel: data.fuel || 'Petrol',
+      ac: Boolean(data.ac ?? true),
+      pricePerDay: Number(data.pricePerDay) || 1500,
+      rating: Number(data.rating) || 4.8,
+      popular: Boolean(data.popular ?? false),
+      available: Boolean(data.available ?? true),
+      image: images[0],
+      images: images,
+      locations: Array.isArray(data.locations) ? data.locations : [],
+      description: data.description ? String(data.description).trim() : '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    carsInventory.push(newCar)
+    saveCars(carsInventory)
+
+    return res.status(201).json({
+      success: true,
+      message: 'Vehicle added to inventory successfully.',
+      car: newCar,
+    })
+  } catch (err) {
+    console.error('Error creating vehicle:', err)
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Failed to add vehicle to inventory.',
+    })
+  }
+})
+
+/**
+ * PUT /api/cars/:id
+ * Update an existing vehicle (admin protected)
+ */
+app.put('/api/cars/:id', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  const { id } = req.params
+  const index = carsInventory.findIndex((c) => String(c.id) === String(id))
+
+  if (index === -1) {
+    return res.status(404).json({
+      success: false,
+      message: `Vehicle with ID ${id} not found.`,
+    })
+  }
+
+  const existing = carsInventory[index]
+  const updateData = req.body || {}
+
+  const images = Array.isArray(updateData.images) && updateData.images.length > 0
+    ? updateData.images
+    : (updateData.image ? [updateData.image] : existing.images || [existing.image])
+
+  carsInventory[index] = {
+    ...existing,
+    ...updateData,
+    id: existing.id,
+    brand: updateData.brand ? String(updateData.brand).trim() : existing.brand,
+    model: updateData.model ? String(updateData.model).trim() : existing.model,
+    year: updateData.year !== undefined ? Number(updateData.year) : existing.year,
+    seats: updateData.seats !== undefined ? Number(updateData.seats) : existing.seats,
+    pricePerDay: updateData.pricePerDay !== undefined ? Number(updateData.pricePerDay) : existing.pricePerDay,
+    rating: updateData.rating !== undefined ? Number(updateData.rating) : existing.rating,
+    popular: updateData.popular !== undefined ? Boolean(updateData.popular) : existing.popular,
+    available: updateData.available !== undefined ? Boolean(updateData.available) : existing.available,
+    ac: updateData.ac !== undefined ? Boolean(updateData.ac) : existing.ac,
+    image: images[0] || existing.image,
+    images: images,
+    locations: Array.isArray(updateData.locations) ? updateData.locations : (existing.locations || []),
+    updatedAt: new Date().toISOString(),
+  }
+
+  saveCars(carsInventory)
+
+  return res.status(200).json({
+    success: true,
+    message: 'Vehicle updated successfully.',
+    car: carsInventory[index],
+  })
+})
+
+/**
+ * DELETE /api/cars/:id
+ * Permanently delete a vehicle from inventory (admin protected)
+ */
+app.delete('/api/cars/:id', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  const { id } = req.params
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Car ID is required.',
+    })
+  }
+
+  const index = carsInventory.findIndex((c) => String(c.id) === String(id))
+  if (index === -1) {
+    return res.status(404).json({
+      success: false,
+      message: `Vehicle with ID ${id} not found or already deleted.`,
+    })
+  }
+
+  const deletedCar = carsInventory.splice(index, 1)[0]
+  saveCars(carsInventory)
+
+  return res.status(200).json({
+    success: true,
+    message: `Vehicle "${deletedCar.brand} ${deletedCar.model}" permanently deleted from inventory.`,
+    deletedId: id,
+    car: deletedCar,
+  })
+})
+
+/**
+ * POST /api/cars/reset
+ * Reset inventory back to default 12 vehicles (admin protected)
+ */
+app.post('/api/cars/reset', (req, res) => {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  if (!token || !activeAdminSessions.has(token)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  carsInventory = [...DEFAULT_CARS]
+  saveCars(carsInventory)
+
+  return res.status(200).json({
+    success: true,
+    message: 'Vehicle inventory reset to default fleet.',
+    cars: carsInventory,
   })
 })
 

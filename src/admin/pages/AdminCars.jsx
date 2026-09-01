@@ -45,6 +45,7 @@ export default function AdminCars() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [deletingCar, setDeletingCar] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [notification, setNotification] = useState(null)
 
   // Filter and sort logic
   const filteredCars = useMemo(() => {
@@ -104,8 +105,17 @@ export default function AdminCars() {
     if (res.success) {
       setEditingCar(null)
       setShowAddModal(false)
+      setNotification({
+        type: 'success',
+        message: editingCar ? 'Vehicle updated successfully.' : 'Vehicle added to inventory successfully.',
+      })
+      setTimeout(() => setNotification(null), 4000)
     } else {
-      alert(res.error || 'Failed to save vehicle details')
+      setNotification({
+        type: 'error',
+        message: res.error || 'Failed to save vehicle details',
+      })
+      setTimeout(() => setNotification(null), 5000)
     }
   }
 
@@ -113,12 +123,24 @@ export default function AdminCars() {
   const handleConfirmDelete = async () => {
     if (!deletingCar) return
     setActionLoading(true)
+    setNotification(null)
+    const carName = `${deletingCar.brand} ${deletingCar.model}`
     const res = await deleteCar(deletingCar.id)
     setActionLoading(false)
+
     if (res.success) {
       setDeletingCar(null)
+      setNotification({
+        type: 'success',
+        message: `Vehicle "${carName}" was permanently deleted from inventory.`,
+      })
+      setTimeout(() => setNotification(null), 4000)
     } else {
-      alert(res.error || 'Failed to delete vehicle')
+      setNotification({
+        type: 'error',
+        message: res.error || 'Failed to delete vehicle from server.',
+      })
+      setTimeout(() => setNotification(null), 5000)
     }
   }
 
@@ -145,6 +167,24 @@ export default function AdminCars() {
           </button>
         </div>
       </div>
+
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`flex items-center gap-2.5 rounded-2xl p-3.5 text-xs font-semibold animate-fade-in ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}
+        >
+          {notification.type === 'success' ? (
+            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          ) : (
+            <XCircle size={16} className="text-red-600 shrink-0" />
+          )}
+          <span>{notification.message}</span>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-4 rounded-2xl border border-charcoal-900/10 bg-white p-4 shadow-sm sm:p-5">
