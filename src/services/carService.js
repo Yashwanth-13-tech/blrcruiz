@@ -20,43 +20,79 @@ async function ensureDB() {
 
 export const carService = {
   /**
-   * Fetch all cars from the persistent backend database with local IndexedDB synchronization
+   * Fetch all cars from the persistent backend database with resilient synchronization
+   * Handles server container restarts/redeployments without losing client or server records.
    */
   async getCars() {
     await ensureDB()
 
-    // 1. Try fetching live fleet from backend API
+    let serverCars = null
+
+    // 1. Fetch live fleet from backend API
     try {
       const res = await fetch(apiUrl('/api/cars'))
       if (res.ok) {
         const data = await res.json()
         if (data.success && Array.isArray(data.cars)) {
-          // Sync with local IndexedDB: remove any cars that no longer exist on server
-          try {
-            const localCars = await getAllFromStore('cars')
-            const serverIds = new Set(data.cars.map((c) => String(c.id)))
-            for (const localCar of localCars) {
-              if (!serverIds.has(String(localCar.id))) {
-                await deleteFromStore('cars', localCar.id)
-              }
-            }
-            for (const car of data.cars) {
-              await putInStore('cars', car)
-            }
-          } catch (syncErr) {
-            console.warn('[CarService] IndexedDB sync notice:', syncErr.message)
-          }
-
-          return data.cars.sort((a, b) => Number(a.id) - Number(b.id))
+          serverCars = data.cars
         }
       }
     } catch (err) {
       console.warn('[CarService] Network notice: Using cached cars:', err.message)
     }
 
-    // 2. Fallback to local store
     const localCars = await getAllFromStore('cars')
-    return localCars.sort((a, b) => Number(a.id) - Number(b.id))
+    const deletedRecords = await getAllFromStore('deleted_records')
+    const deletedSet = new Set(deletedRecords.map((r) => String(r.id)))
+
+    if (serverCars !== null) {
+      const serverIds = new Set(serverCars.map((c) => String(c.id)))
+
+      // Check if client has valid local cars not present on server (e.g. after ephemeral server restart)
+      const unsyncedLocalCars = localCars.filter(
+        (c) => !serverIds.has(String(c.id)) && !deletedSet.has(String(c.id))
+      )
+
+      if (unsyncedLocalCars.length > 0) {
+        try {
+          const syncRes = await fetch(apiUrl('/api/cars/sync'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cars: unsyncedLocalCars }),
+          })
+          if (syncRes.ok) {
+            const syncData = await syncRes.json()
+            if (syncData.success && Array.isArray(syncData.cars)) {
+              serverCars = syncData.cars
+            }
+          }
+        } catch (syncErr) {
+          console.warn('[CarService] Auto-sync notice:', syncErr.message)
+        }
+      }
+
+      // Sync verified server list to local IndexedDB
+      const updatedServerIds = new Set(serverCars.map((c) => String(c.id)))
+      for (const localCar of localCars) {
+        if (!updatedServerIds.has(String(localCar.id)) && deletedSet.has(String(localCar.id))) {
+          await deleteFromStore('cars', localCar.id)
+        }
+      }
+      for (const car of serverCars) {
+        if (!deletedSet.has(String(car.id))) {
+          await putInStore('cars', car)
+        }
+      }
+
+      return serverCars
+        .filter((c) => !deletedSet.has(String(c.id)))
+        .sort((a, b) => Number(a.id) - Number(b.id))
+    }
+
+    // 2. Offline fallback to local IndexedDB store
+    return localCars
+      .filter((c) => !deletedSet.has(String(c.id)))
+      .sort((a, b) => Number(a.id) - Number(b.id))
   },
 
   /**
@@ -92,6 +128,11 @@ export const carService = {
     await ensureDB()
     const token = authService.getToken()
 
+    // Clear any previous deletion record for this vehicle if re-adding
+    if (carData.id) {
+      await deleteFromStore('deleted_records', String(carData.id)).catch(() => {})
+    }
+
     // Send POST request to backend API
     try {
       const res = await fetch(apiUrl('/api/cars'), {
@@ -106,6 +147,7 @@ export const carService = {
       if (res.ok) {
         const data = await res.json()
         if (data.success && data.car) {
+          await deleteFromStore('deleted_records', String(data.car.id)).catch(() => {})
           await putInStore('cars', data.car)
           return data.car
         }
@@ -170,7 +212,7 @@ export const carService = {
     const carId = isNaN(numericId) ? id : numericId
     const token = authService.getToken()
 
-    // Send DELETE request to backend server
+    // 1. Send DELETE request to backend server
     try {
       const res = await fetch(apiUrl(`/api/cars/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -199,7 +241,10 @@ export const carService = {
       throw err
     }
 
-    // Permanently remove from local IndexedDB cache
+    // 2. Record tombstone in deleted_records to prevent resurrecting during sync
+    await putInStore('deleted_records', { id: String(id), timestamp: Date.now() })
+
+    // 3. Permanently remove from local IndexedDB cache
     await deleteFromStore('cars', carId)
     return true
   },
@@ -223,7 +268,7 @@ export const carService = {
   },
 
   /**
-   * Reset database back to default 12 cars
+   * Reset database back to default 0 cars
    */
   async resetToDefaults() {
     await ensureDB()

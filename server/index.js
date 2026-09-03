@@ -69,115 +69,136 @@ app.use('/api', (req, res, next) => {
   next()
 })
 
-// In-memory / file-backed bookings storage with graceful fallback for cloud environments
-const BOOKINGS_FILE = path.join(__dirname, 'bookings_data.json')
+// ----------------------------------------------------------------------------
+// Persistent Storage Manager (Render Disks, Cloud Volumes, or Local Storage)
+// ----------------------------------------------------------------------------
+function resolveStorageDir() {
+  const envDir = process.env.DATA_DIR || process.env.PERSISTENT_STORAGE_PATH || process.env.PERSISTENT_DATA_DIR
+  if (envDir) {
+    try {
+      if (!fs.existsSync(envDir)) fs.mkdirSync(envDir, { recursive: true })
+      return envDir
+    } catch (e) {
+      console.warn('[Storage] Notice: Could not initialize custom DATA_DIR, falling back:', e.message)
+    }
+  }
 
-function loadBookings() {
+  // Check standard Render persistent disk mount paths
+  const persistentMounts = ['/var/data', '/data']
+  for (const mount of persistentMounts) {
+    if (fs.existsSync(mount)) {
+      try {
+        const testFile = path.join(mount, '.write_test')
+        fs.writeFileSync(testFile, 'ok')
+        fs.unlinkSync(testFile)
+        return mount
+      } catch {
+        // Not writable, continue
+      }
+    }
+  }
+
+  const localDataDir = path.join(__dirname, 'data')
+  if (!fs.existsSync(localDataDir)) {
+    try {
+      fs.mkdirSync(localDataDir, { recursive: true })
+      return localDataDir
+    } catch {
+      return __dirname
+    }
+  }
+  return localDataDir
+}
+
+const STORAGE_DIR = resolveStorageDir()
+console.log(`[Storage] Active persistent data directory: ${STORAGE_DIR}`)
+
+const BOOKINGS_FILE = path.join(STORAGE_DIR, 'bookings_data.json')
+const INQUIRIES_FILE = path.join(STORAGE_DIR, 'inquiries_data.json')
+const CARS_FILE = path.join(STORAGE_DIR, 'cars_data.json')
+const SESSIONS_FILE = path.join(STORAGE_DIR, 'sessions_data.json')
+
+// Helper for reading JSON files with legacy fallback
+function readDataFile(targetPath, legacyPath) {
   try {
-    if (fs.existsSync(BOOKINGS_FILE)) {
-      const data = fs.readFileSync(BOOKINGS_FILE, 'utf-8')
-      return JSON.parse(data)
+    if (fs.existsSync(targetPath)) {
+      const data = fs.readFileSync(targetPath, 'utf-8')
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) return parsed
     }
   } catch (err) {
-    console.warn('[Storage] Notice: Could not read local bookings file, starting with memory store:', err.message)
+    console.warn(`[Storage] Warning: Failed reading ${targetPath}:`, err.message)
   }
+
+  // Check legacy path if different
+  if (legacyPath && legacyPath !== targetPath && fs.existsSync(legacyPath)) {
+    try {
+      const data = fs.readFileSync(legacyPath, 'utf-8')
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) {
+        // Migrate to new storage path
+        try {
+          fs.writeFileSync(targetPath, JSON.stringify(parsed, null, 2), 'utf-8')
+        } catch {}
+        return parsed
+      }
+    } catch {}
+  }
+
   return []
 }
 
-function saveBookings(bookings) {
+// Helper for writing JSON files safely
+function writeDataFile(targetPath, data) {
   try {
-    const dir = path.dirname(BOOKINGS_FILE)
+    const dir = path.dirname(targetPath)
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })
     }
-    fs.writeFileSync(BOOKINGS_FILE, JSON.stringify(bookings, null, 2), 'utf-8')
+    fs.writeFileSync(targetPath, JSON.stringify(data, null, 2), 'utf-8')
   } catch (err) {
-    console.warn('[Storage] Notice: Could not persist to local disk (Render ephemeral storage), retained in memory cache:', err.message)
+    console.warn(`[Storage] Warning: Could not persist to ${targetPath}:`, err.message)
   }
+}
+
+function loadBookings() {
+  return readDataFile(BOOKINGS_FILE, path.join(__dirname, 'bookings_data.json'))
+}
+
+function saveBookings(bookings) {
+  writeDataFile(BOOKINGS_FILE, bookings)
 }
 
 let confirmedBookings = loadBookings()
 
-// In-memory / file-backed customer inquiries storage with graceful fallback
-const INQUIRIES_FILE = path.join(__dirname, 'inquiries_data.json')
-
 function loadInquiries() {
-  try {
-    if (fs.existsSync(INQUIRIES_FILE)) {
-      const data = fs.readFileSync(INQUIRIES_FILE, 'utf-8')
-      const parsed = JSON.parse(data)
-      if (Array.isArray(parsed)) return parsed
-    }
-  } catch (err) {
-    console.warn('[Storage] Notice: Could not read inquiries file:', err.message)
-  }
-
-  saveInquiries([])
-  return []
+  return readDataFile(INQUIRIES_FILE, path.join(__dirname, 'inquiries_data.json'))
 }
 
 function saveInquiries(inquiries) {
-  try {
-    const dir = path.dirname(INQUIRIES_FILE)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    fs.writeFileSync(INQUIRIES_FILE, JSON.stringify(inquiries, null, 2), 'utf-8')
-  } catch (err) {
-    console.warn('[Storage] Notice: Could not persist inquiries to disk (Render ephemeral storage), retained in memory cache:', err.message)
-  }
+  writeDataFile(INQUIRIES_FILE, inquiries)
 }
 
 let confirmedInquiries = loadInquiries()
 
-// In-memory / file-backed car inventory storage with graceful fallback
-const CARS_FILE = path.join(__dirname, 'cars_data.json')
-
 function loadCars() {
-  try {
-    if (fs.existsSync(CARS_FILE)) {
-      const data = fs.readFileSync(CARS_FILE, 'utf-8')
-      const parsed = JSON.parse(data)
-      if (Array.isArray(parsed)) return parsed
-    }
-  } catch (err) {
-    console.warn('[Storage] Notice: Could not read cars file:', err.message)
-  }
-
-  saveCars([])
-  return []
+  return readDataFile(CARS_FILE, path.join(__dirname, 'cars_data.json'))
 }
 
 function saveCars(cars) {
-  try {
-    const dir = path.dirname(CARS_FILE)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    fs.writeFileSync(CARS_FILE, JSON.stringify(cars, null, 2), 'utf-8')
-  } catch (err) {
-    console.warn('[Storage] Notice: Could not persist cars to disk (Render ephemeral storage), retained in memory cache:', err.message)
-  }
+  writeDataFile(CARS_FILE, cars)
 }
 
 let carsInventory = loadCars()
 
-// File-backed active admin sessions with in-memory caching
-const SESSIONS_FILE = path.join(__dirname, 'sessions_data.json')
-
 function loadSessions() {
   const map = new Map()
   try {
-    if (fs.existsSync(SESSIONS_FILE)) {
-      const data = fs.readFileSync(SESSIONS_FILE, 'utf-8')
-      const parsed = JSON.parse(data)
-      if (Array.isArray(parsed)) {
-        const now = Date.now()
-        for (const s of parsed) {
-          if (s && s.token && s.expiresAt > now) {
-            map.set(s.token, s)
-          }
-        }
+    const list = readDataFile(SESSIONS_FILE, path.join(__dirname, 'sessions_data.json'))
+    const now = Date.now()
+    for (const s of list) {
+      if (s && s.token && s.expiresAt > now) {
+        map.set(s.token, s)
       }
     }
   } catch (err) {
@@ -187,16 +208,8 @@ function loadSessions() {
 }
 
 function saveSessions(sessionsMap) {
-  try {
-    const list = Array.from(sessionsMap.values()).filter((s) => s && s.expiresAt > Date.now())
-    const dir = path.dirname(SESSIONS_FILE)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8')
-  } catch (err) {
-    console.warn('[Storage] Notice: Could not persist sessions to disk:', err.message)
-  }
+  const list = Array.from(sessionsMap.values()).filter((s) => s && s.expiresAt > Date.now())
+  writeDataFile(SESSIONS_FILE, list)
 }
 
 const activeAdminSessions = loadSessions()
@@ -726,6 +739,8 @@ app.delete('/api/inquiries/:id', (req, res) => {
 app.get('/api/cars', (req, res) => {
   return res.status(200).json({
     success: true,
+    count: carsInventory.length,
+    storage: STORAGE_DIR,
     cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
   })
 })
@@ -747,6 +762,49 @@ app.get('/api/cars/:id', (req, res) => {
     success: true,
     car,
   })
+})
+
+/**
+ * POST /api/cars/sync
+ * Auto-sync / restore missing client vehicles to server (resilient against ephemeral container restarts)
+ */
+app.post('/api/cars/sync', (req, res) => {
+  try {
+    const { cars = [] } = req.body || {}
+    if (!Array.isArray(cars) || cars.length === 0) {
+      return res.status(200).json({
+        success: true,
+        cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
+      })
+    }
+
+    let restoredCount = 0
+    for (const clientCar of cars) {
+      if (!clientCar || !clientCar.brand || !clientCar.model) continue
+      const exists = carsInventory.some((c) => String(c.id) === String(clientCar.id))
+      if (!exists) {
+        carsInventory.push(clientCar)
+        restoredCount++
+      }
+    }
+
+    if (restoredCount > 0) {
+      saveCars(carsInventory)
+      console.log(`[Cars SYNC] Restored ${restoredCount} vehicle(s) into active backend storage (${CARS_FILE})`)
+    }
+
+    return res.status(200).json({
+      success: true,
+      restoredCount,
+      cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
+    })
+  } catch (err) {
+    console.error('[Cars SYNC Error]:', err.message)
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Sync error',
+    })
+  }
 })
 
 /**
@@ -805,6 +863,7 @@ app.post('/api/cars', (req, res) => {
 
     carsInventory.push(newCar)
     saveCars(carsInventory)
+    console.log(`[Cars POST] Created vehicle ID ${newCar.id} (${newCar.brand} ${newCar.model}) saved to ${CARS_FILE}`)
 
     return res.status(201).json({
       success: true,
@@ -872,6 +931,7 @@ app.put('/api/cars/:id', (req, res) => {
   }
 
   saveCars(carsInventory)
+  console.log(`[Cars PUT] Updated vehicle ID ${id} (${carsInventory[index].brand} ${carsInventory[index].model}) in ${CARS_FILE}`)
 
   return res.status(200).json({
     success: true,
@@ -913,6 +973,7 @@ app.delete('/api/cars/:id', (req, res) => {
 
   const deletedCar = carsInventory.splice(index, 1)[0]
   saveCars(carsInventory)
+  console.log(`[Cars DELETE] Deleted vehicle ID ${id} (${deletedCar.brand} ${deletedCar.model}) from ${CARS_FILE}`)
 
   return res.status(200).json({
     success: true,
@@ -939,10 +1000,11 @@ app.post('/api/cars/reset', (req, res) => {
 
   carsInventory = []
   saveCars(carsInventory)
+  console.log(`[Cars RESET] Reset inventory to 0 vehicles in ${CARS_FILE}`)
 
   return res.status(200).json({
     success: true,
-    message: 'Vehicle inventory completely reset to 0 vehicles.',
+    message: 'Car inventory reset to 0 vehicles.',
     cars: [],
   })
 })

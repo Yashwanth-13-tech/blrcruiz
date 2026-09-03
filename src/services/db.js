@@ -1,9 +1,10 @@
 const DB_NAME = 'drivora_db'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const CARS_STORE = 'cars'
 const INQUIRIES_STORE = 'inquiries'
 const SETTINGS_STORE = 'settings'
 const LOCATIONS_STORE = 'locations'
+const DELETED_RECORDS_STORE = 'deleted_records'
 
 /**
  * Open or create the IndexedDB database
@@ -38,6 +39,11 @@ function openDB() {
       // Store for Bangalore pickup locations (added in DB_VERSION 2)
       if (!db.objectStoreNames.contains(LOCATIONS_STORE)) {
         db.createObjectStore(LOCATIONS_STORE, { keyPath: 'id' })
+      }
+
+      // Store for explicitly deleted records (added in DB_VERSION 3 to prevent ghost syncing)
+      if (!db.objectStoreNames.contains(DELETED_RECORDS_STORE)) {
+        db.createObjectStore(DELETED_RECORDS_STORE, { keyPath: 'id' })
       }
     }
 

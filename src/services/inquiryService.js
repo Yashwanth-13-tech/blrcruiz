@@ -25,38 +25,48 @@ export const inquiryService = {
   async getInquiries() {
     await ensureDB()
 
+    let serverInquiries = null
+
     // 1. Try fetching live inquiries from backend API
     try {
       const res = await fetch(apiUrl('/api/inquiries'))
       if (res.ok) {
         const data = await res.json()
         if (data.success && Array.isArray(data.inquiries)) {
-          // Sync with local IndexedDB cache: remove deleted inquiries
-          try {
-            const localInquiries = await getAllFromStore('inquiries')
-            const serverIds = new Set(data.inquiries.map((i) => String(i.id)))
-            for (const localInq of localInquiries) {
-              if (!serverIds.has(String(localInq.id))) {
-                await deleteFromStore('inquiries', localInq.id)
-              }
-            }
-            for (const inq of data.inquiries) {
-              await putInStore('inquiries', inq)
-            }
-          } catch (syncErr) {
-            console.warn('[InquiryService] IndexedDB sync notice:', syncErr.message)
-          }
-
-          return data.inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          serverInquiries = data.inquiries
         }
       }
     } catch (err) {
       console.warn('[InquiryService] Network notice: Using cached inquiries:', err.message)
     }
 
-    // 2. Fallback to local store
     const localInquiries = await getAllFromStore('inquiries')
-    return localInquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    const deletedRecords = await getAllFromStore('deleted_records')
+    const deletedSet = new Set(deletedRecords.map((r) => String(r.id)))
+
+    if (serverInquiries !== null) {
+      const updatedServerIds = new Set(serverInquiries.map((i) => String(i.id)))
+
+      for (const localInq of localInquiries) {
+        if (!updatedServerIds.has(String(localInq.id)) && deletedSet.has(String(localInq.id))) {
+          await deleteFromStore('inquiries', localInq.id)
+        }
+      }
+      for (const inq of serverInquiries) {
+        if (!deletedSet.has(String(inq.id))) {
+          await putInStore('inquiries', inq)
+        }
+      }
+
+      return serverInquiries
+        .filter((i) => !deletedSet.has(String(i.id)))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    }
+
+    // 2. Fallback to local store
+    return localInquiries
+      .filter((i) => !deletedSet.has(String(i.id)))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   },
 
   /**
@@ -190,7 +200,10 @@ export const inquiryService = {
       console.warn('[InquiryService] Server delete notice:', err.message)
     }
 
-    // 2. Permanently remove from local IndexedDB cache
+    // 2. Record tombstone in deleted_records to prevent ghost sync
+    await putInStore('deleted_records', { id: String(id), timestamp: Date.now() })
+
+    // 3. Permanently remove from local IndexedDB cache
     await deleteFromStore('inquiries', id)
     return true
   },
