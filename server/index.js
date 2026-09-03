@@ -69,150 +69,15 @@ app.use('/api', (req, res, next) => {
   next()
 })
 
-// ----------------------------------------------------------------------------
-// Persistent Storage Manager (Render Disks, Cloud Volumes, or Local Storage)
-// ----------------------------------------------------------------------------
-function resolveStorageDir() {
-  const envDir = process.env.DATA_DIR || process.env.PERSISTENT_STORAGE_PATH || process.env.PERSISTENT_DATA_DIR
-  if (envDir) {
-    try {
-      if (!fs.existsSync(envDir)) fs.mkdirSync(envDir, { recursive: true })
-      return envDir
-    } catch (e) {
-      console.warn('[Storage] Notice: Could not initialize custom DATA_DIR, falling back:', e.message)
-    }
-  }
+import appDb from './db/database.js'
 
-  // Check standard Render persistent disk mount paths
-  const persistentMounts = ['/var/data', '/data']
-  for (const mount of persistentMounts) {
-    if (fs.existsSync(mount)) {
-      try {
-        const testFile = path.join(mount, '.write_test')
-        fs.writeFileSync(testFile, 'ok')
-        fs.unlinkSync(testFile)
-        return mount
-      } catch {
-        // Not writable, continue
-      }
-    }
-  }
-
-  const localDataDir = path.join(__dirname, 'data')
-  if (!fs.existsSync(localDataDir)) {
-    try {
-      fs.mkdirSync(localDataDir, { recursive: true })
-      return localDataDir
-    } catch {
-      return __dirname
-    }
-  }
-  return localDataDir
+// Helper to verify admin token from request Authorization header
+function verifyAdminToken(req) {
+  const authHeader = req.headers['authorization'] || ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return null
+  return appDb.getSession(token)
 }
-
-const STORAGE_DIR = resolveStorageDir()
-console.log(`[Storage] Active persistent data directory: ${STORAGE_DIR}`)
-
-const BOOKINGS_FILE = path.join(STORAGE_DIR, 'bookings_data.json')
-const INQUIRIES_FILE = path.join(STORAGE_DIR, 'inquiries_data.json')
-const CARS_FILE = path.join(STORAGE_DIR, 'cars_data.json')
-const SESSIONS_FILE = path.join(STORAGE_DIR, 'sessions_data.json')
-
-// Helper for reading JSON files with legacy fallback
-function readDataFile(targetPath, legacyPath) {
-  try {
-    if (fs.existsSync(targetPath)) {
-      const data = fs.readFileSync(targetPath, 'utf-8')
-      const parsed = JSON.parse(data)
-      if (Array.isArray(parsed)) return parsed
-    }
-  } catch (err) {
-    console.warn(`[Storage] Warning: Failed reading ${targetPath}:`, err.message)
-  }
-
-  // Check legacy path if different
-  if (legacyPath && legacyPath !== targetPath && fs.existsSync(legacyPath)) {
-    try {
-      const data = fs.readFileSync(legacyPath, 'utf-8')
-      const parsed = JSON.parse(data)
-      if (Array.isArray(parsed)) {
-        // Migrate to new storage path
-        try {
-          fs.writeFileSync(targetPath, JSON.stringify(parsed, null, 2), 'utf-8')
-        } catch {}
-        return parsed
-      }
-    } catch {}
-  }
-
-  return []
-}
-
-// Helper for writing JSON files safely
-function writeDataFile(targetPath, data) {
-  try {
-    const dir = path.dirname(targetPath)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    fs.writeFileSync(targetPath, JSON.stringify(data, null, 2), 'utf-8')
-  } catch (err) {
-    console.warn(`[Storage] Warning: Could not persist to ${targetPath}:`, err.message)
-  }
-}
-
-function loadBookings() {
-  return readDataFile(BOOKINGS_FILE, path.join(__dirname, 'bookings_data.json'))
-}
-
-function saveBookings(bookings) {
-  writeDataFile(BOOKINGS_FILE, bookings)
-}
-
-let confirmedBookings = loadBookings()
-
-function loadInquiries() {
-  return readDataFile(INQUIRIES_FILE, path.join(__dirname, 'inquiries_data.json'))
-}
-
-function saveInquiries(inquiries) {
-  writeDataFile(INQUIRIES_FILE, inquiries)
-}
-
-let confirmedInquiries = loadInquiries()
-
-function loadCars() {
-  return readDataFile(CARS_FILE, path.join(__dirname, 'cars_data.json'))
-}
-
-function saveCars(cars) {
-  writeDataFile(CARS_FILE, cars)
-}
-
-let carsInventory = loadCars()
-
-function loadSessions() {
-  const map = new Map()
-  try {
-    const list = readDataFile(SESSIONS_FILE, path.join(__dirname, 'sessions_data.json'))
-    const now = Date.now()
-    for (const s of list) {
-      if (s && s.token && s.expiresAt > now) {
-        map.set(s.token, s)
-      }
-    }
-  } catch (err) {
-    console.warn('[Storage] Notice: Could not read sessions file:', err.message)
-  }
-  return map
-}
-
-function saveSessions(sessionsMap) {
-  const list = Array.from(sessionsMap.values()).filter((s) => s && s.expiresAt > Date.now())
-  writeDataFile(SESSIONS_FILE, list)
-}
-
-const activeAdminSessions = loadSessions()
 
 // --- Admin Authentication API Endpoints ---
 app.post('/api/auth/login', (req, res) => {
@@ -261,8 +126,7 @@ app.post('/api/auth/login', (req, res) => {
       expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     }
 
-    activeAdminSessions.set(token, sessionData)
-    saveSessions(activeAdminSessions)
+    appDb.saveSession(sessionData)
 
     return res.status(200).json({
       success: true,
@@ -281,25 +145,12 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/auth/verify', (req, res) => {
   try {
-    const authHeader = req.headers['authorization'] || ''
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-    if (!token || !activeAdminSessions.has(token)) {
+    const session = verifyAdminToken(req)
+    if (!session) {
       return res.status(401).json({
         success: false,
         valid: false,
-        message: 'Unauthorized. Invalid or missing admin token.',
-      })
-    }
-
-    const session = activeAdminSessions.get(token)
-    if (!session || session.expiresAt < Date.now()) {
-      activeAdminSessions.delete(token)
-      saveSessions(activeAdminSessions)
-      return res.status(401).json({
-        success: false,
-        valid: false,
-        message: 'Session expired. Please log in again.',
+        message: 'Unauthorized. Invalid or expired admin token.',
       })
     }
 
@@ -309,18 +160,33 @@ app.get('/api/auth/verify', (req, res) => {
       user: session.user,
     })
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Verification error' })
+    console.error('Server auth verify error:', err)
+    return res.status(500).json({
+      success: false,
+      valid: false,
+      message: 'Verification error occurred.',
+    })
   }
 })
 
 app.post('/api/auth/logout', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-  if (token) {
-    activeAdminSessions.delete(token)
-    saveSessions(activeAdminSessions)
+  try {
+    const authHeader = req.headers['authorization'] || ''
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    if (token) {
+      appDb.deleteSession(token)
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully.',
+    })
+  } catch (err) {
+    console.error('Server auth logout error:', err)
+    return res.status(500).json({
+      success: false,
+      message: 'Logout error occurred.',
+    })
   }
-  return res.status(200).json({ success: true, message: 'Logged out successfully.' })
 })
 
 // Helper: Initialize Razorpay instance securely with environment variables
@@ -519,7 +385,7 @@ app.post('/api/razorpay/verify-payment', async (req, res) => {
       })
     }
 
-    // Payment Verified Successfully! Create authoritative booking record
+    // Payment Verified Successfully! Create authoritative booking record in Database
     const bookingId = `DRV-BLR-${Date.now().toString().slice(-6)}`
     
     const newBooking = {
@@ -547,16 +413,14 @@ app.post('/api/razorpay/verify-payment', async (req, res) => {
       verifiedAt: new Date().toISOString(),
     }
 
-    confirmedBookings.unshift(newBooking)
-    saveBookings(confirmedBookings)
-
+    const savedBooking = appDb.createBooking(newBooking)
     console.log(`[BOOKING CONFIRMED] ${bookingId} for ${newBooking.customerName} - Payment ID: ${razorpay_payment_id}`)
 
     return res.status(200).json({
       success: true,
       message: 'Payment verified and booking confirmed successfully.',
       bookingId,
-      booking: newBooking,
+      booking: savedBooking || newBooking,
     })
   } catch (error) {
     console.error('Error verifying Razorpay payment:', error)
@@ -571,36 +435,36 @@ app.post('/api/razorpay/verify-payment', async (req, res) => {
  * Get all confirmed bookings (for admin management) - Protected
  */
 app.get('/api/bookings', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
     })
   }
 
+  const bookings = appDb.getBookings()
   return res.status(200).json({
     success: true,
-    bookings: confirmedBookings,
+    bookings,
   })
 })
 
 /**
  * GET /api/inquiries
- * Retrieve all customer inquiries (sorted latest first)
+ * Retrieve all customer inquiries from database
  */
 app.get('/api/inquiries', (req, res) => {
+  const inquiries = appDb.getInquiries()
   return res.status(200).json({
     success: true,
-    inquiries: [...confirmedInquiries].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    inquiries,
   })
 })
 
 /**
  * POST /api/inquiries
- * Create a new customer inquiry (from contact form or direct booking modal)
+ * Create a new customer inquiry in database
  */
 app.post('/api/inquiries', (req, res) => {
   try {
@@ -612,27 +476,7 @@ app.post('/api/inquiries', (req, res) => {
       })
     }
 
-    const id = 'inq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)
-    const newInquiry = {
-      id,
-      name: String(data.name).trim(),
-      phone: String(data.phone).trim(),
-      email: data.email ? String(data.email).trim() : '',
-      carName: data.carName || data.car || 'General Inquiry',
-      carId: data.carId || null,
-      pickupLocation: data.pickupLocation || 'Bangalore City',
-      pickupDate: data.pickupDate || '',
-      returnDate: data.returnDate || '',
-      days: Number(data.days) || 1,
-      estimatedTotal: data.estimatedTotal || '—',
-      message: data.message ? String(data.message).trim() : '',
-      status: 'New',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    confirmedInquiries.unshift(newInquiry)
-    saveInquiries(confirmedInquiries)
+    const newInquiry = appDb.createInquiry(data)
 
     return res.status(201).json({
       success: true,
@@ -650,13 +494,11 @@ app.post('/api/inquiries', (req, res) => {
 
 /**
  * PUT /api/inquiries/:id
- * Update inquiry status (admin protected)
+ * Update inquiry status in database (admin protected)
  */
 app.put('/api/inquiries/:id', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
@@ -664,41 +506,29 @@ app.put('/api/inquiries/:id', (req, res) => {
   }
 
   const { id } = req.params
-  const { status, notes } = req.body || {}
+  const updatedInquiry = appDb.updateInquiry(id, req.body)
 
-  const index = confirmedInquiries.findIndex((inq) => inq.id === id)
-  if (index === -1) {
+  if (!updatedInquiry) {
     return res.status(404).json({
       success: false,
       message: `Inquiry with ID ${id} not found.`,
     })
   }
 
-  confirmedInquiries[index] = {
-    ...confirmedInquiries[index],
-    ...(status ? { status } : {}),
-    ...(notes !== undefined ? { notes } : {}),
-    updatedAt: new Date().toISOString(),
-  }
-
-  saveInquiries(confirmedInquiries)
-
   return res.status(200).json({
     success: true,
     message: 'Inquiry updated successfully.',
-    inquiry: confirmedInquiries[index],
+    inquiry: updatedInquiry,
   })
 })
 
 /**
  * DELETE /api/inquiries/:id
- * Permanently delete customer inquiry (admin protected)
+ * Permanently delete customer inquiry from database (admin protected)
  */
 app.delete('/api/inquiries/:id', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
@@ -713,16 +543,13 @@ app.delete('/api/inquiries/:id', (req, res) => {
     })
   }
 
-  const index = confirmedInquiries.findIndex((inq) => inq.id === id)
-  if (index === -1) {
+  const deletedInquiry = appDb.deleteInquiry(id)
+  if (!deletedInquiry) {
     return res.status(404).json({
       success: false,
       message: `Inquiry with ID ${id} not found or already deleted.`,
     })
   }
-
-  const deletedInquiry = confirmedInquiries.splice(index, 1)[0]
-  saveInquiries(confirmedInquiries)
 
   return res.status(200).json({
     success: true,
@@ -733,25 +560,48 @@ app.delete('/api/inquiries/:id', (req, res) => {
 })
 
 /**
- * GET /api/cars
- * Retrieve all vehicles in inventory (sorted by ID)
+ * POST /api/inquiries/reset
+ * Reset customer inquiries to 0 leads (admin protected)
  */
-app.get('/api/cars', (req, res) => {
+app.post('/api/inquiries/reset', (req, res) => {
+  const session = verifyAdminToken(req)
+  if (!session) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  appDb.resetInquiries()
+
   return res.status(200).json({
     success: true,
-    count: carsInventory.length,
-    storage: STORAGE_DIR,
-    cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
+    message: 'Customer inquiries completely reset to 0 leads.',
+    inquiries: [],
+  })
+})
+
+/**
+ * GET /api/cars
+ * Retrieve all vehicles from permanent SQLite database (Single Source of Truth)
+ */
+app.get('/api/cars', (req, res) => {
+  const cars = appDb.getVehicles()
+  return res.status(200).json({
+    success: true,
+    count: cars.length,
+    database: appDb.dbPath,
+    cars,
   })
 })
 
 /**
  * GET /api/cars/:id
- * Retrieve a single vehicle by ID
+ * Retrieve a single vehicle by ID from permanent database
  */
 app.get('/api/cars/:id', (req, res) => {
   const { id } = req.params
-  const car = carsInventory.find((c) => String(c.id) === String(id))
+  const car = appDb.getVehicleById(id)
   if (!car) {
     return res.status(404).json({
       success: false,
@@ -766,7 +616,7 @@ app.get('/api/cars/:id', (req, res) => {
 
 /**
  * POST /api/cars/sync
- * Auto-sync / restore missing client vehicles to server (resilient against ephemeral container restarts)
+ * Auto-sync / restore missing vehicles to SQLite database
  */
 app.post('/api/cars/sync', (req, res) => {
   try {
@@ -774,29 +624,30 @@ app.post('/api/cars/sync', (req, res) => {
     if (!Array.isArray(cars) || cars.length === 0) {
       return res.status(200).json({
         success: true,
-        cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
+        cars: appDb.getVehicles(),
       })
     }
 
+    const currentCars = appDb.getVehicles()
     let restoredCount = 0
     for (const clientCar of cars) {
       if (!clientCar || !clientCar.brand || !clientCar.model) continue
-      const exists = carsInventory.some((c) => String(c.id) === String(clientCar.id))
+      const exists = currentCars.some((c) => String(c.id) === String(clientCar.id))
       if (!exists) {
-        carsInventory.push(clientCar)
+        appDb.createVehicle(clientCar)
         restoredCount++
       }
     }
 
+    const updatedCars = appDb.getVehicles()
     if (restoredCount > 0) {
-      saveCars(carsInventory)
-      console.log(`[Cars SYNC] Restored ${restoredCount} vehicle(s) into active backend storage (${CARS_FILE})`)
+      console.log(`[Cars SYNC] Restored ${restoredCount} vehicle(s) into database (${appDb.dbPath})`)
     }
 
     return res.status(200).json({
       success: true,
       restoredCount,
-      cars: [...carsInventory].sort((a, b) => Number(a.id) - Number(b.id)),
+      cars: updatedCars,
     })
   } catch (err) {
     console.error('[Cars SYNC Error]:', err.message)
@@ -809,13 +660,11 @@ app.post('/api/cars/sync', (req, res) => {
 
 /**
  * POST /api/cars
- * Add a new vehicle to inventory (admin protected)
+ * Add a new vehicle to permanent SQLite database (admin protected)
  */
 app.post('/api/cars', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
@@ -831,63 +680,30 @@ app.post('/api/cars', (req, res) => {
       })
     }
 
-    const maxId = carsInventory.reduce((max, c) => (typeof c.id === 'number' && c.id > max ? c.id : max), 0)
-    const newId = maxId + 1
-
-    const images = Array.isArray(data.images) && data.images.length > 0
-      ? data.images
-      : [data.image || 'https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80']
-
-    const newCar = {
-      ...data,
-      id: newId,
-      brand: String(data.brand).trim(),
-      model: String(data.model).trim(),
-      category: data.category || 'Hatchback',
-      year: Number(data.year) || new Date().getFullYear(),
-      seats: Number(data.seats) || 5,
-      transmission: data.transmission || 'Automatic',
-      fuel: data.fuel || 'Petrol',
-      ac: Boolean(data.ac ?? true),
-      pricePerDay: Number(data.pricePerDay) || 1500,
-      rating: Number(data.rating) || 4.8,
-      popular: Boolean(data.popular ?? false),
-      available: Boolean(data.available ?? true),
-      image: images[0],
-      images: images,
-      locations: Array.isArray(data.locations) ? data.locations : [],
-      description: data.description ? String(data.description).trim() : '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    carsInventory.push(newCar)
-    saveCars(carsInventory)
-    console.log(`[Cars POST] Created vehicle ID ${newCar.id} (${newCar.brand} ${newCar.model}) saved to ${CARS_FILE}`)
+    const newCar = appDb.createVehicle(data)
+    console.log(`[Cars POST] Created vehicle ID ${newCar.id} (${newCar.brand} ${newCar.model}) saved to database (${appDb.dbPath})`)
 
     return res.status(201).json({
       success: true,
-      message: 'Vehicle added to inventory successfully.',
+      message: 'Vehicle added to database successfully.',
       car: newCar,
     })
   } catch (err) {
-    console.error('Error creating vehicle:', err)
+    console.error('Error creating vehicle in database:', err)
     return res.status(500).json({
       success: false,
-      message: err.message || 'Failed to add vehicle to inventory.',
+      message: err.message || 'Failed to add vehicle to database.',
     })
   }
 })
 
 /**
  * PUT /api/cars/:id
- * Update an existing vehicle (admin protected)
+ * Update an existing vehicle in permanent database (admin protected)
  */
 app.put('/api/cars/:id', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
@@ -895,60 +711,31 @@ app.put('/api/cars/:id', (req, res) => {
   }
 
   const { id } = req.params
-  const index = carsInventory.findIndex((c) => String(c.id) === String(id))
+  const updatedCar = appDb.updateVehicle(id, req.body)
 
-  if (index === -1) {
+  if (!updatedCar) {
     return res.status(404).json({
       success: false,
       message: `Vehicle with ID ${id} not found.`,
     })
   }
 
-  const existing = carsInventory[index]
-  const updateData = req.body || {}
-
-  const images = Array.isArray(updateData.images) && updateData.images.length > 0
-    ? updateData.images
-    : (updateData.image ? [updateData.image] : existing.images || [existing.image])
-
-  carsInventory[index] = {
-    ...existing,
-    ...updateData,
-    id: existing.id,
-    brand: updateData.brand ? String(updateData.brand).trim() : existing.brand,
-    model: updateData.model ? String(updateData.model).trim() : existing.model,
-    year: updateData.year !== undefined ? Number(updateData.year) : existing.year,
-    seats: updateData.seats !== undefined ? Number(updateData.seats) : existing.seats,
-    pricePerDay: updateData.pricePerDay !== undefined ? Number(updateData.pricePerDay) : existing.pricePerDay,
-    rating: updateData.rating !== undefined ? Number(updateData.rating) : existing.rating,
-    popular: updateData.popular !== undefined ? Boolean(updateData.popular) : existing.popular,
-    available: updateData.available !== undefined ? Boolean(updateData.available) : existing.available,
-    ac: updateData.ac !== undefined ? Boolean(updateData.ac) : existing.ac,
-    image: images[0] || existing.image,
-    images: images,
-    locations: Array.isArray(updateData.locations) ? updateData.locations : (existing.locations || []),
-    updatedAt: new Date().toISOString(),
-  }
-
-  saveCars(carsInventory)
-  console.log(`[Cars PUT] Updated vehicle ID ${id} (${carsInventory[index].brand} ${carsInventory[index].model}) in ${CARS_FILE}`)
+  console.log(`[Cars PUT] Updated vehicle ID ${id} (${updatedCar.brand} ${updatedCar.model}) in database (${appDb.dbPath})`)
 
   return res.status(200).json({
     success: true,
     message: 'Vehicle updated successfully.',
-    car: carsInventory[index],
+    car: updatedCar,
   })
 })
 
 /**
  * DELETE /api/cars/:id
- * Permanently delete a vehicle from inventory (admin protected)
+ * Permanently delete a vehicle from database (admin protected)
  */
 app.delete('/api/cars/:id', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
@@ -963,21 +750,19 @@ app.delete('/api/cars/:id', (req, res) => {
     })
   }
 
-  const index = carsInventory.findIndex((c) => String(c.id) === String(id))
-  if (index === -1) {
+  const deletedCar = appDb.deleteVehicle(id)
+  if (!deletedCar) {
     return res.status(404).json({
       success: false,
       message: `Vehicle with ID ${id} not found or already deleted.`,
     })
   }
 
-  const deletedCar = carsInventory.splice(index, 1)[0]
-  saveCars(carsInventory)
-  console.log(`[Cars DELETE] Deleted vehicle ID ${id} (${deletedCar.brand} ${deletedCar.model}) from ${CARS_FILE}`)
+  console.log(`[Cars DELETE] Deleted vehicle ID ${id} (${deletedCar.brand} ${deletedCar.model}) from database (${appDb.dbPath})`)
 
   return res.status(200).json({
     success: true,
-    message: `Vehicle "${deletedCar.brand} ${deletedCar.model}" permanently deleted from inventory.`,
+    message: `Vehicle "${deletedCar.brand} ${deletedCar.model}" permanently deleted from database.`,
     deletedId: id,
     car: deletedCar,
   })
@@ -985,52 +770,24 @@ app.delete('/api/cars/:id', (req, res) => {
 
 /**
  * POST /api/cars/reset
- * Reset inventory to 0 vehicles (admin protected)
+ * Reset inventory to 0 vehicles in database (admin protected)
  */
 app.post('/api/cars/reset', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
+  const session = verifyAdminToken(req)
+  if (!session) {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized. Admin session token required.',
     })
   }
 
-  carsInventory = []
-  saveCars(carsInventory)
-  console.log(`[Cars RESET] Reset inventory to 0 vehicles in ${CARS_FILE}`)
+  appDb.resetVehicles()
+  console.log(`[Cars RESET] Reset inventory to 0 vehicles in database (${appDb.dbPath})`)
 
   return res.status(200).json({
     success: true,
-    message: 'Car inventory reset to 0 vehicles.',
+    message: 'Car inventory reset to 0 vehicles in database.',
     cars: [],
-  })
-})
-
-/**
- * POST /api/inquiries/reset
- * Reset customer inquiries to 0 leads (admin protected)
- */
-app.post('/api/inquiries/reset', (req, res) => {
-  const authHeader = req.headers['authorization'] || ''
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-
-  if (!token || !activeAdminSessions.has(token)) {
-    return res.status(401).json({
-      success: false,
-      message: 'Unauthorized. Admin session token required.',
-    })
-  }
-
-  confirmedInquiries = []
-  saveInquiries(confirmedInquiries)
-
-  return res.status(200).json({
-    success: true,
-    message: 'Customer inquiries completely reset to 0 leads.',
-    inquiries: [],
   })
 })
 

@@ -51,6 +51,10 @@ server/cars_data.json
 server/sessions_data.json
 server/data/
 data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 
 

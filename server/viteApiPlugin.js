@@ -371,32 +371,15 @@ export function razorpayApiPlugin() {
           }
         }
 
-        // --- Cars Inventory API Endpoints for Dev Server ---
-        const fs = await import('fs')
-        const path = await import('path')
-        const CARS_FILE = path.join(process.cwd(), 'server', 'cars_data.json')
-
-        function loadDevCars() {
-          try {
-            if (fs.existsSync(CARS_FILE)) {
-              const data = fs.readFileSync(CARS_FILE, 'utf-8')
-              return JSON.parse(data)
-            }
-          } catch {}
-          return []
-        }
-
-        function saveDevCars(cars) {
-          try {
-            fs.writeFileSync(CARS_FILE, JSON.stringify(cars, null, 2), 'utf-8')
-          } catch {}
-        }
+        // --- Cars Inventory API Endpoints for Dev Server (Using appDb) ---
+        const { appDb } = await import('./db/database.js')
 
         if (url === '/api/cars' && req.method === 'GET') {
-          const cars = loadDevCars()
+          const cars = appDb.getVehicles()
           return sendJson(res, 200, {
             success: true,
-            cars: cars.sort((a, b) => Number(a.id) - Number(b.id)),
+            database: appDb.dbPath,
+            cars,
           })
         }
 
@@ -404,18 +387,18 @@ export function razorpayApiPlugin() {
           try {
             const body = await parseRequestBody(req)
             const { cars = [] } = body
-            let current = loadDevCars()
+            const currentCars = appDb.getVehicles()
             let count = 0
             for (const c of cars) {
-              if (c && c.brand && c.model && !current.some((x) => String(x.id) === String(c.id))) {
-                current.push(c)
+              if (c && c.brand && c.model && !currentCars.some((x) => String(x.id) === String(c.id))) {
+                appDb.createVehicle(c)
                 count++
               }
             }
-            if (count > 0) saveDevCars(current)
             return sendJson(res, 200, {
               success: true,
-              cars: current.sort((a, b) => Number(a.id) - Number(b.id)),
+              restoredCount: count,
+              cars: appDb.getVehicles(),
             })
           } catch (err) {
             return sendJson(res, 500, { success: false, message: err.message })
@@ -426,7 +409,8 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            if (!token || !activeAdminSessions.has(token)) {
+            const session = token ? appDb.getSession(token) : null
+            if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
 
@@ -435,36 +419,7 @@ export function razorpayApiPlugin() {
               return sendJson(res, 400, { success: false, message: 'Vehicle brand and model are required.' })
             }
 
-            const cars = loadDevCars()
-            const maxId = cars.reduce((max, c) => (typeof c.id === 'number' && c.id > max ? c.id : max), 0)
-            const newId = maxId + 1
-            const images = Array.isArray(data.images) && data.images.length > 0 ? data.images : [data.image || 'https://images.unsplash.com/photo-1617469767053-d3b523a0b982?auto=format&fit=crop&w=800&q=80']
-
-            const newCar = {
-              ...data,
-              id: newId,
-              brand: String(data.brand).trim(),
-              model: String(data.model).trim(),
-              category: data.category || 'Hatchback',
-              year: Number(data.year) || new Date().getFullYear(),
-              seats: Number(data.seats) || 5,
-              transmission: data.transmission || 'Automatic',
-              fuel: data.fuel || 'Petrol',
-              ac: Boolean(data.ac ?? true),
-              pricePerDay: Number(data.pricePerDay) || 1500,
-              rating: Number(data.rating) || 4.8,
-              popular: Boolean(data.popular ?? false),
-              available: Boolean(data.available ?? true),
-              image: images[0],
-              images: images,
-              locations: Array.isArray(data.locations) ? data.locations : [],
-              description: data.description ? String(data.description).trim() : '',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            }
-
-            cars.push(newCar)
-            saveDevCars(cars)
+            const newCar = appDb.createVehicle(data)
             return sendJson(res, 201, { success: true, car: newCar })
           } catch (err) {
             return sendJson(res, 500, { success: false, message: err.message })
@@ -475,18 +430,16 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            if (!token || !activeAdminSessions.has(token)) {
+            const session = token ? appDb.getSession(token) : null
+            if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
 
             const id = url.replace('/api/cars/', '')
-            const cars = loadDevCars()
-            const idx = cars.findIndex((c) => String(c.id) === String(id))
-            if (idx === -1) {
-              return sendJson(res, 404, { success: false, message: 'Vehicle not found.' })
+            const deleted = appDb.deleteVehicle(id)
+            if (!deleted) {
+              return sendJson(res, 404, { success: false, message: 'Vehicle not found or already deleted.' })
             }
-            const deleted = cars.splice(idx, 1)[0]
-            saveDevCars(cars)
             return sendJson(res, 200, { success: true, car: deleted })
           } catch (err) {
             return sendJson(res, 500, { success: false, message: err.message })
@@ -497,25 +450,18 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            if (!token || !activeAdminSessions.has(token)) {
+            const session = token ? appDb.getSession(token) : null
+            if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
 
             const id = url.replace('/api/cars/', '')
-            const cars = loadDevCars()
-            const idx = cars.findIndex((c) => String(c.id) === String(id))
-            if (idx === -1) {
+            const updateData = await parseRequestBody(req)
+            const updated = appDb.updateVehicle(id, updateData)
+            if (!updated) {
               return sendJson(res, 404, { success: false, message: 'Vehicle not found.' })
             }
-            const updateData = await parseRequestBody(req)
-            cars[idx] = {
-              ...cars[idx],
-              ...updateData,
-              id: cars[idx].id,
-              updatedAt: new Date().toISOString(),
-            }
-            saveDevCars(cars)
-            return sendJson(res, 200, { success: true, car: cars[idx] })
+            return sendJson(res, 200, { success: true, car: updated })
           } catch (err) {
             return sendJson(res, 500, { success: false, message: err.message })
           }
@@ -526,3 +472,4 @@ export function razorpayApiPlugin() {
     },
   }
 }
+
