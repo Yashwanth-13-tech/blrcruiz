@@ -17,6 +17,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lucide-react": "^0.408.0",
+    "pg": "^8.23.0",
     "postcss": "^8.4.39",
     "razorpay": "^2.9.8",
     "react": "^18.3.1",

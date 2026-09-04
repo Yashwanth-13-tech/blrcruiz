@@ -72,15 +72,15 @@ app.use('/api', (req, res, next) => {
 import appDb from './db/database.js'
 
 // Helper to verify admin token from request Authorization header
-function verifyAdminToken(req) {
+async function verifyAdminToken(req) {
   const authHeader = req.headers['authorization'] || ''
   const token = authHeader.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  return appDb.getSession(token)
+  return await appDb.getSession(token)
 }
 
 // --- Admin Authentication API Endpoints ---
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body || {}
 
@@ -126,7 +126,7 @@ app.post('/api/auth/login', (req, res) => {
       expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     }
 
-    appDb.saveSession(sessionData)
+    await appDb.saveSession(sessionData)
 
     return res.status(200).json({
       success: true,
@@ -143,9 +143,9 @@ app.post('/api/auth/login', (req, res) => {
   }
 })
 
-app.get('/api/auth/verify', (req, res) => {
+app.get('/api/auth/verify', async (req, res) => {
   try {
-    const session = verifyAdminToken(req)
+    const session = await verifyAdminToken(req)
     if (!session) {
       return res.status(401).json({
         success: false,
@@ -169,12 +169,12 @@ app.get('/api/auth/verify', (req, res) => {
   }
 })
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'] || ''
     const token = authHeader.replace(/^Bearer\s+/i, '').trim()
     if (token) {
-      appDb.deleteSession(token)
+      await appDb.deleteSession(token)
     }
     return res.status(200).json({
       success: true,
@@ -434,8 +434,8 @@ app.post('/api/razorpay/verify-payment', async (req, res) => {
 /**
  * Get all confirmed bookings (for admin management) - Protected
  */
-app.get('/api/bookings', (req, res) => {
-  const session = verifyAdminToken(req)
+app.get('/api/bookings', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -443,7 +443,7 @@ app.get('/api/bookings', (req, res) => {
     })
   }
 
-  const bookings = appDb.getBookings()
+  const bookings = await appDb.getBookings()
   return res.status(200).json({
     success: true,
     bookings,
@@ -454,8 +454,8 @@ app.get('/api/bookings', (req, res) => {
  * GET /api/inquiries
  * Retrieve all customer inquiries from database
  */
-app.get('/api/inquiries', (req, res) => {
-  const inquiries = appDb.getInquiries()
+app.get('/api/inquiries', async (req, res) => {
+  const inquiries = await appDb.getInquiries()
   return res.status(200).json({
     success: true,
     inquiries,
@@ -466,7 +466,7 @@ app.get('/api/inquiries', (req, res) => {
  * POST /api/inquiries
  * Create a new customer inquiry in database
  */
-app.post('/api/inquiries', (req, res) => {
+app.post('/api/inquiries', async (req, res) => {
   try {
     const data = req.body || {}
     if (!data.name || !data.phone) {
@@ -476,7 +476,7 @@ app.post('/api/inquiries', (req, res) => {
       })
     }
 
-    const newInquiry = appDb.createInquiry(data)
+    const newInquiry = await appDb.createInquiry(data)
 
     return res.status(201).json({
       success: true,
@@ -496,8 +496,8 @@ app.post('/api/inquiries', (req, res) => {
  * PUT /api/inquiries/:id
  * Update inquiry status in database (admin protected)
  */
-app.put('/api/inquiries/:id', (req, res) => {
-  const session = verifyAdminToken(req)
+app.put('/api/inquiries/:id', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -506,7 +506,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   }
 
   const { id } = req.params
-  const updatedInquiry = appDb.updateInquiry(id, req.body)
+  const updatedInquiry = await appDb.updateInquiry(id, req.body)
 
   if (!updatedInquiry) {
     return res.status(404).json({
@@ -526,8 +526,8 @@ app.put('/api/inquiries/:id', (req, res) => {
  * DELETE /api/inquiries/:id
  * Permanently delete customer inquiry from database (admin protected)
  */
-app.delete('/api/inquiries/:id', (req, res) => {
-  const session = verifyAdminToken(req)
+app.delete('/api/inquiries/:id', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -543,7 +543,7 @@ app.delete('/api/inquiries/:id', (req, res) => {
     })
   }
 
-  const deletedInquiry = appDb.deleteInquiry(id)
+  const deletedInquiry = await appDb.deleteInquiry(id)
   if (!deletedInquiry) {
     return res.status(404).json({
       success: false,
@@ -563,8 +563,8 @@ app.delete('/api/inquiries/:id', (req, res) => {
  * POST /api/inquiries/reset
  * Reset customer inquiries to 0 leads (admin protected)
  */
-app.post('/api/inquiries/reset', (req, res) => {
-  const session = verifyAdminToken(req)
+app.post('/api/inquiries/reset', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -572,7 +572,7 @@ app.post('/api/inquiries/reset', (req, res) => {
     })
   }
 
-  appDb.resetInquiries()
+  await appDb.resetInquiries()
 
   return res.status(200).json({
     success: true,
@@ -583,14 +583,14 @@ app.post('/api/inquiries/reset', (req, res) => {
 
 /**
  * GET /api/cars
- * Retrieve all vehicles from permanent SQLite database (Single Source of Truth)
+ * Retrieve all vehicles from permanent database (Single Source of Truth)
  */
-app.get('/api/cars', (req, res) => {
-  const cars = appDb.getVehicles()
+app.get('/api/cars', async (req, res) => {
+  const cars = await appDb.getVehicles()
   return res.status(200).json({
     success: true,
     count: cars.length,
-    database: appDb.dbPath,
+    engine: appDb.engine,
     cars,
   })
 })
@@ -599,9 +599,9 @@ app.get('/api/cars', (req, res) => {
  * GET /api/cars/:id
  * Retrieve a single vehicle by ID from permanent database
  */
-app.get('/api/cars/:id', (req, res) => {
+app.get('/api/cars/:id', async (req, res) => {
   const { id } = req.params
-  const car = appDb.getVehicleById(id)
+  const car = await appDb.getVehicleById(id)
   if (!car) {
     return res.status(404).json({
       success: false,
@@ -616,32 +616,33 @@ app.get('/api/cars/:id', (req, res) => {
 
 /**
  * POST /api/cars/sync
- * Auto-sync / restore missing vehicles to SQLite database
+ * Auto-sync / restore missing vehicles to database
  */
-app.post('/api/cars/sync', (req, res) => {
+app.post('/api/cars/sync', async (req, res) => {
   try {
     const { cars = [] } = req.body || {}
     if (!Array.isArray(cars) || cars.length === 0) {
+      const allCars = await appDb.getVehicles()
       return res.status(200).json({
         success: true,
-        cars: appDb.getVehicles(),
+        cars: allCars,
       })
     }
 
-    const currentCars = appDb.getVehicles()
+    const currentCars = await appDb.getVehicles()
     let restoredCount = 0
     for (const clientCar of cars) {
       if (!clientCar || !clientCar.brand || !clientCar.model) continue
       const exists = currentCars.some((c) => String(c.id) === String(clientCar.id))
       if (!exists) {
-        appDb.createVehicle(clientCar)
+        await appDb.createVehicle(clientCar)
         restoredCount++
       }
     }
 
-    const updatedCars = appDb.getVehicles()
+    const updatedCars = await appDb.getVehicles()
     if (restoredCount > 0) {
-      console.log(`[Cars SYNC] Restored ${restoredCount} vehicle(s) into database (${appDb.dbPath})`)
+      console.log(`[Cars SYNC] Restored ${restoredCount} vehicle(s) into database (${appDb.engine})`)
     }
 
     return res.status(200).json({
@@ -660,10 +661,10 @@ app.post('/api/cars/sync', (req, res) => {
 
 /**
  * POST /api/cars
- * Add a new vehicle to permanent SQLite database (admin protected)
+ * Add a new vehicle to permanent database (admin protected)
  */
-app.post('/api/cars', (req, res) => {
-  const session = verifyAdminToken(req)
+app.post('/api/cars', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -680,8 +681,8 @@ app.post('/api/cars', (req, res) => {
       })
     }
 
-    const newCar = appDb.createVehicle(data)
-    console.log(`[Cars POST] Created vehicle ID ${newCar.id} (${newCar.brand} ${newCar.model}) saved to database (${appDb.dbPath})`)
+    const newCar = await appDb.createVehicle(data)
+    console.log(`[Cars POST] Created vehicle ID ${newCar.id} (${newCar.brand} ${newCar.model}) in database (${appDb.engine})`)
 
     return res.status(201).json({
       success: true,
@@ -701,8 +702,8 @@ app.post('/api/cars', (req, res) => {
  * PUT /api/cars/:id
  * Update an existing vehicle in permanent database (admin protected)
  */
-app.put('/api/cars/:id', (req, res) => {
-  const session = verifyAdminToken(req)
+app.put('/api/cars/:id', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -711,7 +712,7 @@ app.put('/api/cars/:id', (req, res) => {
   }
 
   const { id } = req.params
-  const updatedCar = appDb.updateVehicle(id, req.body)
+  const updatedCar = await appDb.updateVehicle(id, req.body)
 
   if (!updatedCar) {
     return res.status(404).json({
@@ -720,7 +721,7 @@ app.put('/api/cars/:id', (req, res) => {
     })
   }
 
-  console.log(`[Cars PUT] Updated vehicle ID ${id} (${updatedCar.brand} ${updatedCar.model}) in database (${appDb.dbPath})`)
+  console.log(`[Cars PUT] Updated vehicle ID ${id} (${updatedCar.brand} ${updatedCar.model}) in database (${appDb.engine})`)
 
   return res.status(200).json({
     success: true,
@@ -733,8 +734,8 @@ app.put('/api/cars/:id', (req, res) => {
  * DELETE /api/cars/:id
  * Permanently delete a vehicle from database (admin protected)
  */
-app.delete('/api/cars/:id', (req, res) => {
-  const session = verifyAdminToken(req)
+app.delete('/api/cars/:id', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -750,7 +751,7 @@ app.delete('/api/cars/:id', (req, res) => {
     })
   }
 
-  const deletedCar = appDb.deleteVehicle(id)
+  const deletedCar = await appDb.deleteVehicle(id)
   if (!deletedCar) {
     return res.status(404).json({
       success: false,
@@ -758,7 +759,7 @@ app.delete('/api/cars/:id', (req, res) => {
     })
   }
 
-  console.log(`[Cars DELETE] Deleted vehicle ID ${id} (${deletedCar.brand} ${deletedCar.model}) from database (${appDb.dbPath})`)
+  console.log(`[Cars DELETE] Deleted vehicle ID ${id} (${deletedCar.brand} ${deletedCar.model}) from database (${appDb.engine})`)
 
   return res.status(200).json({
     success: true,
@@ -772,8 +773,8 @@ app.delete('/api/cars/:id', (req, res) => {
  * POST /api/cars/reset
  * Reset inventory to 0 vehicles in database (admin protected)
  */
-app.post('/api/cars/reset', (req, res) => {
-  const session = verifyAdminToken(req)
+app.post('/api/cars/reset', async (req, res) => {
+  const session = await verifyAdminToken(req)
   if (!session) {
     return res.status(401).json({
       success: false,
@@ -781,8 +782,8 @@ app.post('/api/cars/reset', (req, res) => {
     })
   }
 
-  appDb.resetVehicles()
-  console.log(`[Cars RESET] Reset inventory to 0 vehicles in database (${appDb.dbPath})`)
+  await appDb.resetVehicles()
+  console.log(`[Cars RESET] Reset inventory to 0 vehicles in database (${appDb.engine})`)
 
   return res.status(200).json({
     success: true,

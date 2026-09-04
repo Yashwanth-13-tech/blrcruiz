@@ -375,10 +375,10 @@ export function razorpayApiPlugin() {
         const { appDb } = await import('./db/database.js')
 
         if (url === '/api/cars' && req.method === 'GET') {
-          const cars = appDb.getVehicles()
+          const cars = await appDb.getVehicles()
           return sendJson(res, 200, {
             success: true,
-            database: appDb.dbPath,
+            engine: appDb.engine,
             cars,
           })
         }
@@ -387,18 +387,19 @@ export function razorpayApiPlugin() {
           try {
             const body = await parseRequestBody(req)
             const { cars = [] } = body
-            const currentCars = appDb.getVehicles()
+            const currentCars = await appDb.getVehicles()
             let count = 0
             for (const c of cars) {
               if (c && c.brand && c.model && !currentCars.some((x) => String(x.id) === String(c.id))) {
-                appDb.createVehicle(c)
+                await appDb.createVehicle(c)
                 count++
               }
             }
+            const updatedCars = await appDb.getVehicles()
             return sendJson(res, 200, {
               success: true,
               restoredCount: count,
-              cars: appDb.getVehicles(),
+              cars: updatedCars,
             })
           } catch (err) {
             return sendJson(res, 500, { success: false, message: err.message })
@@ -409,7 +410,7 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? appDb.getSession(token) : null
+            const session = token ? await appDb.getSession(token) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
@@ -419,7 +420,7 @@ export function razorpayApiPlugin() {
               return sendJson(res, 400, { success: false, message: 'Vehicle brand and model are required.' })
             }
 
-            const newCar = appDb.createVehicle(data)
+            const newCar = await appDb.createVehicle(data)
             return sendJson(res, 201, { success: true, car: newCar })
           } catch (err) {
             return sendJson(res, 500, { success: false, message: err.message })
@@ -430,13 +431,13 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? appDb.getSession(token) : null
+            const session = token ? await appDb.getSession(token) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
 
             const id = url.replace('/api/cars/', '')
-            const deleted = appDb.deleteVehicle(id)
+            const deleted = await appDb.deleteVehicle(id)
             if (!deleted) {
               return sendJson(res, 404, { success: false, message: 'Vehicle not found or already deleted.' })
             }
@@ -450,14 +451,14 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? appDb.getSession(token) : null
+            const session = token ? await appDb.getSession(token) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
 
             const id = url.replace('/api/cars/', '')
             const updateData = await parseRequestBody(req)
-            const updated = appDb.updateVehicle(id, updateData)
+            const updated = await appDb.updateVehicle(id, updateData)
             if (!updated) {
               return sendJson(res, 404, { success: false, message: 'Vehicle not found.' })
             }
