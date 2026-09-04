@@ -14,8 +14,15 @@ import {
 import { useCars } from '../../context/CarContext.jsx'
 
 export default function AdminLocations() {
-  const { locations, cars, addLocation, updateLocation, deleteLocation } = useCars()
+  const { locations, cars, addLocation, updateLocation, deleteLocation, refreshData } = useCars()
 
+  React.useEffect(() => {
+    if (typeof refreshData === 'function') {
+      refreshData()
+    }
+  }, [refreshData])
+
+  const [notification, setNotification] = useState(null)
   const [newName, setNewName] = useState('')
   const [newZone, setNewZone] = useState('')
   const [newLat, setNewLat] = useState('')
@@ -77,6 +84,11 @@ export default function AdminLocations() {
       setNewZone('')
       setNewLat('')
       setNewLng('')
+      setNotification({
+        type: 'success',
+        message: `Location "${res.location.name}" added to database successfully.`,
+      })
+      setTimeout(() => setNotification(null), 4000)
     } else {
       setAddError(res.error || 'Failed to add location')
     }
@@ -107,22 +119,67 @@ export default function AdminLocations() {
     )
     if (res.success) {
       setEditingId(null)
+      setNotification({
+        type: 'success',
+        message: `Location "${res.location.name}" updated successfully.`,
+      })
+      setTimeout(() => setNotification(null), 4000)
     } else {
       setEditError(res.error || 'Failed to update')
     }
   }
 
   const handleDelete = async (id) => {
+    const locToDelete = locations.find((l) => l.id === id)
     setDeleteLoading(true)
-    await deleteLocation(id)
+    const res = await deleteLocation(id)
     setDeleteLoading(false)
     setDeletingId(null)
+    if (res.success) {
+      setNotification({
+        type: 'success',
+        message: `Location "${locToDelete?.name || id}" was permanently deleted.`,
+      })
+      setTimeout(() => setNotification(null), 4000)
+    } else {
+      setNotification({
+        type: 'error',
+        message: res.error || 'Failed to delete location',
+      })
+      setTimeout(() => setNotification(null), 5000)
+    }
   }
 
   const ZONES = ['Airport', 'North', 'South', 'Central', 'East', 'West', 'Other']
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`flex items-center justify-between gap-3 rounded-2xl p-4 text-xs font-bold shadow-xs border ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-red-50 text-red-800 border-red-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {notification.type === 'success' ? (
+              <Check size={16} className="text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle size={16} className="text-red-600 shrink-0" />
+            )}
+            <span>{notification.message}</span>
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            className="text-slate-400 hover:text-slate-700"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h2 className="font-display text-2xl font-extrabold text-charcoal-900">

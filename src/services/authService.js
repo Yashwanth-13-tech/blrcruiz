@@ -67,14 +67,17 @@ export const authService = {
           sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
           return session.user
         }
-      } else if (serverRes.status === 401) {
-        throw new Error('Invalid credentials. Access denied.')
+      } else {
+        const errData = await serverRes.json().catch(() => ({}))
+        if (serverRes.status === 401 || serverRes.status === 400) {
+          throw new Error(errData.message || 'Invalid credentials. Access denied.')
+        }
       }
     } catch (err) {
-      if (err.message === 'Invalid credentials. Access denied.') {
+      if (err.message && (err.message.includes('Invalid credentials') || err.message.includes('required'))) {
         throw err
       }
-      // If server is temporarily unreachable, fallback to client crypto hash check
+      // If server is temporarily unreachable due to network disconnect, fallback to client crypto hash check
     }
 
     // 2. Cryptographic client hash verification fallback

@@ -51,6 +51,7 @@ export function razorpayApiPlugin() {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ? req.url.split('?')[0] : ''
+        const { appDb } = await import('./db/database.js')
 
         // --- Admin Authentication API Endpoints ---
         if (url === '/api/auth/login' && req.method === 'POST') {
@@ -102,6 +103,7 @@ export function razorpayApiPlugin() {
             }
 
             activeAdminSessions.set(token, sessionData)
+            await appDb.saveSession(sessionData)
 
             return sendJson(res, 200, {
               success: true,
@@ -123,7 +125,8 @@ export function razorpayApiPlugin() {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
 
-            if (!token || !activeAdminSessions.has(token)) {
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
+            if (!session) {
               return sendJson(res, 401, {
                 success: false,
                 valid: false,
@@ -131,9 +134,9 @@ export function razorpayApiPlugin() {
               })
             }
 
-            const session = activeAdminSessions.get(token)
-            if (!session || session.expiresAt < Date.now()) {
+            if (session.expiresAt < Date.now()) {
               activeAdminSessions.delete(token)
+              await appDb.deleteSession(token)
               return sendJson(res, 401, {
                 success: false,
                 valid: false,
@@ -156,14 +159,14 @@ export function razorpayApiPlugin() {
           const token = authHeader.replace(/^Bearer\s+/i, '').trim()
           if (token) {
             activeAdminSessions.delete(token)
+            await appDb.deleteSession(token)
           }
           return sendJson(res, 200, { success: true, message: 'Logged out successfully.' })
         }
 
-        // 1. GET /api/config/razorpay
+        // --- Config / Razorpay Endpoints ---
         if (url === '/api/config/razorpay' && req.method === 'GET') {
           const { keyId, isConfigured } = getEnvCredentials()
-
           return sendJson(res, 200, {
             success: true,
             keyId: isConfigured ? keyId : (keyId.startsWith('rzp_') && !keyId.includes('your_') ? keyId : ''),
@@ -172,7 +175,6 @@ export function razorpayApiPlugin() {
           })
         }
 
-        // 2. GET /api/health
         if (url === '/api/health' && req.method === 'GET') {
           const { isConfigured } = getEnvCredentials()
           return sendJson(res, 200, {
@@ -182,7 +184,7 @@ export function razorpayApiPlugin() {
           })
         }
 
-        // 3. POST /api/razorpay/create-order
+        // --- Razorpay Order & Payment Endpoints ---
         if (url === '/api/razorpay/create-order' && req.method === 'POST') {
           try {
             const body = await parseRequestBody(req)
@@ -214,14 +216,12 @@ export function razorpayApiPlugin() {
               })
             }
 
-            // Calculate duration
             const start = new Date(pickupDate + 'T00:00:00')
             const end = new Date(returnDate + 'T00:00:00')
             const diffTime = end.getTime() - start.getTime()
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
             const validDays = diffDays > 0 ? diffDays : 1
 
-            // Price calculation
             const rawPrice = String(pricePerDay || '').replace(/[^0-9.]/g, '')
             const dailyRate = Number(rawPrice) > 0 ? Number(rawPrice) : 1499
             const baseTotal = dailyRate * validDays
@@ -240,7 +240,6 @@ export function razorpayApiPlugin() {
               })
             }
 
-            // Create Order with official Razorpay SDK
             const razorpay = new Razorpay({
               key_id: keyId,
               key_secret: keySecret,
@@ -291,7 +290,6 @@ export function razorpayApiPlugin() {
           }
         }
 
-        // 4. POST /api/razorpay/verify-payment
         if (url === '/api/razorpay/verify-payment' && req.method === 'POST') {
           try {
             const body = await parseRequestBody(req)
@@ -318,7 +316,6 @@ export function razorpayApiPlugin() {
               })
             }
 
-            // Cryptographic HMAC SHA256 Signature Verification
             const expectedSignature = crypto
               .createHmac('sha256', keySecret)
               .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -357,6 +354,8 @@ export function razorpayApiPlugin() {
               verifiedAt: new Date().toISOString(),
             }
 
+            await appDb.createBooking(newBooking)
+
             return sendJson(res, 200, {
               success: true,
               message: 'Payment verified and booking confirmed successfully.',
@@ -371,16 +370,24 @@ export function razorpayApiPlugin() {
           }
         }
 
-        // --- Cars Inventory API Endpoints for Dev Server (Using appDb) ---
-        const { appDb } = await import('./db/database.js')
-
+        // --- Cars Inventory API Endpoints ---
         if (url === '/api/cars' && req.method === 'GET') {
           const cars = await appDb.getVehicles()
           return sendJson(res, 200, {
             success: true,
+            count: cars.length,
             engine: appDb.engine,
             cars,
           })
+        }
+
+        if (url.startsWith('/api/cars/') && req.method === 'GET') {
+          const id = url.replace('/api/cars/', '')
+          const car = await appDb.getVehicleById(id)
+          if (!car) {
+            return sendJson(res, 404, { success: false, message: 'Vehicle not found' })
+          }
+          return sendJson(res, 200, { success: true, car })
         }
 
         if (url === '/api/cars/sync' && req.method === 'POST') {
@@ -410,7 +417,7 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? await appDb.getSession(token) : null
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
@@ -431,7 +438,7 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? await appDb.getSession(token) : null
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
@@ -452,7 +459,7 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? await appDb.getSession(token) : null
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
@@ -482,7 +489,7 @@ export function razorpayApiPlugin() {
           try {
             const authHeader = req.headers['authorization'] || ''
             const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-            const session = token ? await appDb.getSession(token) : null
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
             if (!session) {
               return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
             }
@@ -499,9 +506,157 @@ export function razorpayApiPlugin() {
           }
         }
 
+        // --- Locations API Endpoints ---
+        if (url === '/api/locations' && req.method === 'GET') {
+          try {
+            const locations = await appDb.getLocations()
+            return sendJson(res, 200, { success: true, count: locations.length, locations })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url.startsWith('/api/locations/') && req.method === 'GET') {
+          try {
+            const id = url.replace('/api/locations/', '')
+            const location = await appDb.getLocationById(id)
+            if (!location) {
+              return sendJson(res, 404, { success: false, message: 'Location not found' })
+            }
+            return sendJson(res, 200, { success: true, location })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url === '/api/locations' && req.method === 'POST') {
+          try {
+            const authHeader = req.headers['authorization'] || ''
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
+            if (!session) {
+              return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
+            }
+
+            const data = await parseRequestBody(req)
+            if (!data.name || !data.name.trim()) {
+              return sendJson(res, 400, { success: false, message: 'Location name is required.' })
+            }
+
+            const newLocation = await appDb.createLocation(data)
+            return sendJson(res, 201, { success: true, location: newLocation })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url.startsWith('/api/locations/') && req.method === 'PUT') {
+          try {
+            const authHeader = req.headers['authorization'] || ''
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
+            if (!session) {
+              return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
+            }
+
+            const id = url.replace('/api/locations/', '')
+            const data = await parseRequestBody(req)
+            const updated = await appDb.updateLocation(id, data)
+            if (!updated) {
+              return sendJson(res, 404, { success: false, message: 'Location not found.' })
+            }
+            return sendJson(res, 200, { success: true, location: updated })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url.startsWith('/api/locations/') && req.method === 'DELETE') {
+          try {
+            const authHeader = req.headers['authorization'] || ''
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
+            if (!session) {
+              return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
+            }
+
+            const id = url.replace('/api/locations/', '')
+            const deleted = await appDb.deleteLocation(id)
+            if (!deleted) {
+              return sendJson(res, 404, { success: false, message: 'Location not found.' })
+            }
+            return sendJson(res, 200, { success: true, location: deleted })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        // --- Inquiries API Endpoints ---
+        if (url === '/api/inquiries' && req.method === 'GET') {
+          try {
+            const inquiries = await appDb.getInquiries()
+            return sendJson(res, 200, { success: true, inquiries })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url === '/api/inquiries' && req.method === 'POST') {
+          try {
+            const data = await parseRequestBody(req)
+            if (!data.name || !data.phone) {
+              return sendJson(res, 400, { success: false, message: 'Customer name and phone are required.' })
+            }
+            const newInq = await appDb.createInquiry(data)
+            return sendJson(res, 201, { success: true, inquiry: newInq })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url.startsWith('/api/inquiries/') && req.method === 'PUT') {
+          try {
+            const authHeader = req.headers['authorization'] || ''
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
+            if (!session) {
+              return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
+            }
+
+            const id = url.replace('/api/inquiries/', '')
+            const data = await parseRequestBody(req)
+            const updated = await appDb.updateInquiry(id, data)
+            if (!updated) {
+              return sendJson(res, 404, { success: false, message: 'Inquiry not found.' })
+            }
+            return sendJson(res, 200, { success: true, inquiry: updated })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
+        if (url.startsWith('/api/inquiries/') && req.method === 'DELETE') {
+          try {
+            const authHeader = req.headers['authorization'] || ''
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+            const session = token ? (activeAdminSessions.get(token) || await appDb.getSession(token)) : null
+            if (!session) {
+              return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
+            }
+
+            const id = url.replace('/api/inquiries/', '')
+            const deleted = await appDb.deleteInquiry(id)
+            if (!deleted) {
+              return sendJson(res, 404, { success: false, message: 'Inquiry not found.' })
+            }
+            return sendJson(res, 200, { success: true, inquiry: deleted })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
         next()
       })
     },
   }
 }
-

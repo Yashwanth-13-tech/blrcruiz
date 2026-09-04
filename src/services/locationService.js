@@ -1,120 +1,215 @@
-import { getAllFromStore, putInStore, deleteFromStore } from './db.js'
+import {
+  initDB,
+  getAllFromStore,
+  getByIdFromStore,
+  putInStore,
+  deleteFromStore,
+} from './db.js'
+import { apiUrl } from '../config/api.js'
+import { authService } from './authService.js'
 
 const LOCATIONS_STORE = 'locations'
 
-/**
- * Default Bangalore pickup hubs seeded on first run with precise GPS coordinates.
- * Each location has a stable string ID so car assignments remain valid.
- */
-export const DEFAULT_LOCATIONS = [
-  { id: 'loc_airport', name: 'Bangalore Airport (BLR)', zone: 'Airport', lat: 13.1986, lng: 77.7066, active: true },
-  { id: 'loc_koramangala', name: 'Koramangala', zone: 'South', lat: 12.9352, lng: 77.6245, active: true },
-  { id: 'loc_indiranagar', name: 'Indiranagar', zone: 'Central', lat: 12.9784, lng: 77.6408, active: true },
-  { id: 'loc_whitefield', name: 'Whitefield & ITPL', zone: 'East', lat: 12.9698, lng: 77.7499, active: true },
-  { id: 'loc_hsr', name: 'HSR Layout', zone: 'South', lat: 12.9121, lng: 77.6446, active: true },
-  { id: 'loc_electronic_city', name: 'Electronic City', zone: 'South', lat: 12.8452, lng: 77.6602, active: true },
-  { id: 'loc_mg_road', name: 'MG Road & Brigade', zone: 'Central', lat: 12.9756, lng: 77.6066, active: true },
-  { id: 'loc_jayanagar', name: 'Jayanagar & JP Nagar', zone: 'South', lat: 12.9308, lng: 77.5838, active: true },
-  { id: 'loc_hebbal', name: 'Hebbal & Manyata', zone: 'North', lat: 13.0358, lng: 77.5970, active: true },
-  { id: 'loc_marathahalli', name: 'Marathahalli & ORR', zone: 'East', lat: 12.9591, lng: 77.6974, active: true },
-]
+let isInitialized = false
+
+async function ensureDB() {
+  if (!isInitialized) {
+    await initDB()
+    isInitialized = true
+  }
+}
 
 export const locationService = {
   /**
-   * Fetch all locations, seeding defaults or merging coordinates if missing.
+   * Fetch all locations directly from the persistent backend database (Single Source of Truth)
    */
   async getLocations() {
-    let locations = await getAllFromStore(LOCATIONS_STORE)
+    await ensureDB()
 
-    // Seed defaults on first run
-    if (!locations || locations.length === 0) {
-      for (const loc of DEFAULT_LOCATIONS) {
-        await putInStore(LOCATIONS_STORE, {
-          ...loc,
-          createdAt: new Date().toISOString(),
-        })
-      }
-      locations = await getAllFromStore(LOCATIONS_STORE)
-    } else {
-      // Ensure existing stored locations have coordinates backfilled
-      let modified = false
-      for (const loc of locations) {
-        if (!loc.lat || !loc.lng) {
-          const matchDefault = DEFAULT_LOCATIONS.find((d) => d.id === loc.id || d.name === loc.name)
-          if (matchDefault) {
-            loc.lat = matchDefault.lat
-            loc.lng = matchDefault.lng
-            loc.active = loc.active !== false
-            await putInStore(LOCATIONS_STORE, loc)
-            modified = true
+    try {
+      const res = await fetch(apiUrl('/api/locations'))
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && Array.isArray(data.locations)) {
+          // Clear stale local locations cache and sync with server authoritative locations
+          const existingLocs = await getAllFromStore(LOCATIONS_STORE)
+          const serverIdSet = new Set(data.locations.map((l) => String(l.id)))
+          for (const loc of existingLocs) {
+            if (!serverIdSet.has(String(loc.id))) {
+              await deleteFromStore(LOCATIONS_STORE, loc.id).catch(() => {})
+            }
           }
+          for (const loc of data.locations) {
+            await putInStore(LOCATIONS_STORE, loc)
+          }
+          return data.locations.sort((a, b) => a.name.localeCompare(b.name))
         }
       }
-      if (modified) {
-        locations = await getAllFromStore(LOCATIONS_STORE)
-      }
+    } catch (err) {
+      console.warn('[LocationService] Network notice: Using cached locations:', err.message)
     }
 
-    // Sort alphabetically by name
-    return locations.sort((a, b) => a.name.localeCompare(b.name))
+    // Offline fallback to local IndexedDB store if network is temporarily unreachable
+    const localLocations = await getAllFromStore(LOCATIONS_STORE)
+    return localLocations.sort((a, b) => a.name.localeCompare(b.name))
   },
 
   /**
-   * Add a new Bangalore location with coordinates.
+   * Get single location by ID
+   */
+  async getLocationById(id) {
+    await ensureDB()
+
+    // 1. Try backend
+    try {
+      const res = await fetch(apiUrl(`/api/locations/${encodeURIComponent(id)}`))
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.location) {
+          await putInStore(LOCATIONS_STORE, data.location)
+          return data.location
+        }
+      }
+    } catch {
+      // ignore network errors
+    }
+
+    // 2. Fallback to local store
+    return await getByIdFromStore(LOCATIONS_STORE, String(id))
+  },
+
+  /**
+   * Add a new Bangalore pickup hub to database
    */
   async addLocation(name, zone = 'Other', lat = null, lng = null) {
+    await ensureDB()
     const trimmed = name.trim()
     if (!trimmed) throw new Error('Location name is required')
 
-    const existing = await getAllFromStore(LOCATIONS_STORE)
-    const duplicate = existing.find(
-      (l) => l.name.toLowerCase() === trimmed.toLowerCase()
-    )
-    if (duplicate) throw new Error(`Location "${trimmed}" already exists`)
+    const token = authService.getToken()
 
-    const newLoc = {
-      id: `loc_${Date.now()}`,
+    const payload = {
       name: trimmed,
       zone: zone.trim() || 'Other',
-      lat: lat !== null && !isNaN(Number(lat)) ? Number(lat) : 12.9716, // Default to Bangalore Center
+      lat: lat !== null && !isNaN(Number(lat)) ? Number(lat) : 12.9716,
       lng: lng !== null && !isNaN(Number(lng)) ? Number(lng) : 77.5946,
       active: true,
-      createdAt: new Date().toISOString(),
     }
-    await putInStore(LOCATIONS_STORE, newLoc)
-    return newLoc
+
+    // Send POST request to backend API
+    try {
+      const res = await fetch(apiUrl('/api/locations'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.location) {
+          await putInStore(LOCATIONS_STORE, data.location)
+          return data.location
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        if (res.status === 401) {
+          throw new Error('Unauthorized. Please log in again as admin.')
+        }
+        throw new Error(errData.message || `Failed to add location (Status: ${res.status})`)
+      }
+    } catch (err) {
+      console.error('[LocationService] Failed to add location to backend:', err)
+      throw err
+    }
   },
 
   /**
-   * Update a location's name, zone, and coordinates.
+   * Update a location's name, zone, and coordinates in database
    */
   async updateLocation(id, name, zone, lat, lng, active = true) {
+    await ensureDB()
     const trimmed = name.trim()
     if (!trimmed) throw new Error('Location name is required')
 
-    const existing = await getAllFromStore(LOCATIONS_STORE)
-    const current = existing.find((l) => l.id === id)
-    if (!current) throw new Error('Location not found')
+    const token = authService.getToken()
 
-    const updated = {
-      ...current,
+    const payload = {
       name: trimmed,
-      zone: zone ? zone.trim() : current.zone,
-      lat: lat !== undefined && lat !== null && !isNaN(Number(lat)) ? Number(lat) : (current.lat || 12.9716),
-      lng: lng !== undefined && lng !== null && !isNaN(Number(lng)) ? Number(lng) : (current.lng || 77.5946),
-      active: active !== undefined ? Boolean(active) : (current.active !== false),
-      updatedAt: new Date().toISOString(),
+      zone: zone ? zone.trim() : undefined,
+      lat: lat !== undefined && lat !== null && !isNaN(Number(lat)) ? Number(lat) : undefined,
+      lng: lng !== undefined && lng !== null && !isNaN(Number(lng)) ? Number(lng) : undefined,
+      active: active !== undefined ? Boolean(active) : undefined,
     }
-    await putInStore(LOCATIONS_STORE, updated)
-    return updated
+
+    // Send PUT request to backend API
+    try {
+      const res = await fetch(apiUrl(`/api/locations/${encodeURIComponent(id)}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.location) {
+          await putInStore(LOCATIONS_STORE, data.location)
+          return data.location
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        if (res.status === 401) {
+          throw new Error('Unauthorized. Please log in again as admin.')
+        }
+        throw new Error(errData.message || `Failed to update location (Status: ${res.status})`)
+      }
+    } catch (err) {
+      console.error('[LocationService] Failed to update location on backend:', err)
+      throw err
+    }
   },
 
   /**
-   * Delete a location. Cars that had this location assigned will
-   * have it removed automatically via CarContext.
+   * Delete a location from backend database and local store
    */
   async deleteLocation(id) {
-    await deleteFromStore(LOCATIONS_STORE, id)
+    await ensureDB()
+    const token = authService.getToken()
+
+    // Send DELETE request to backend server
+    try {
+      const res = await fetch(apiUrl(`/api/locations/${encodeURIComponent(id)}`), {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+
+      if (!res.ok) {
+        let errMessage = `Server returned HTTP ${res.status}`
+        try {
+          const errData = await res.json()
+          if (errData.message) errMessage = errData.message
+        } catch {}
+        if (res.status === 401) {
+          throw new Error('Unauthorized. Please log in again as admin.')
+        }
+        if (res.status !== 404) {
+          throw new Error(errMessage)
+        }
+      }
+    } catch (err) {
+      console.error('[LocationService] Failed to delete location on backend:', err)
+      throw err
+    }
+
+    // Remove from local IndexedDB cache
+    await deleteFromStore(LOCATIONS_STORE, String(id))
     return true
   },
 }

@@ -10,6 +10,22 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 // ----------------------------------------------------------------------------
+// Default Bangalore Pickup Hubs (Initial seed data if locations table is empty)
+// ----------------------------------------------------------------------------
+export const DEFAULT_LOCATIONS = [
+  { id: 'loc_airport', name: 'Bangalore Airport (BLR)', zone: 'Airport', lat: 13.1986, lng: 77.7066, active: true },
+  { id: 'loc_koramangala', name: 'Koramangala', zone: 'South', lat: 12.9352, lng: 77.6245, active: true },
+  { id: 'loc_indiranagar', name: 'Indiranagar', zone: 'Central', lat: 12.9784, lng: 77.6408, active: true },
+  { id: 'loc_whitefield', name: 'Whitefield & ITPL', zone: 'East', lat: 12.9698, lng: 77.7499, active: true },
+  { id: 'loc_hsr', name: 'HSR Layout', zone: 'South', lat: 12.9121, lng: 77.6446, active: true },
+  { id: 'loc_electronic_city', name: 'Electronic City', zone: 'South', lat: 12.8452, lng: 77.6602, active: true },
+  { id: 'loc_mg_road', name: 'MG Road & Brigade', zone: 'Central', lat: 12.9756, lng: 77.6066, active: true },
+  { id: 'loc_jayanagar', name: 'Jayanagar & JP Nagar', zone: 'South', lat: 12.9308, lng: 77.5838, active: true },
+  { id: 'loc_hebbal', name: 'Hebbal & Manyata', zone: 'North', lat: 13.0358, lng: 77.5970, active: true },
+  { id: 'loc_marathahalli', name: 'Marathahalli & ORR', zone: 'East', lat: 12.9591, lng: 77.6974, active: true },
+]
+
+// ----------------------------------------------------------------------------
 // Database Engine Detection
 // If DATABASE_URL / POSTGRES_URL / PGURI is provided -> use PostgreSQL
 // Otherwise -> use SQLite with persistent directory resolution
@@ -80,8 +96,10 @@ if (POSTGRES_URL) {
 }
 
 // ----------------------------------------------------------------------------
-// Schema Initializations
+// Schema Initializations & Seed Synchronizations
 // ----------------------------------------------------------------------------
+let initPromise = null
+
 async function initSchema() {
   if (activeEngine === 'postgres') {
     const client = await pgPool.connect()
@@ -105,6 +123,17 @@ async function initSchema() {
           images JSONB DEFAULT '[]'::jsonb,
           locations JSONB DEFAULT '[]'::jsonb,
           description TEXT,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS locations (
+          id VARCHAR(255) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          zone VARCHAR(100) DEFAULT 'Other',
+          lat NUMERIC(10,6) DEFAULT 12.9716,
+          lng NUMERIC(10,6) DEFAULT 77.5946,
+          active BOOLEAN DEFAULT true,
           created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
@@ -161,6 +190,16 @@ async function initSchema() {
           expires_at BIGINT
         );
       `)
+
+      // Seed missing default locations into PostgreSQL
+      for (const loc of DEFAULT_LOCATIONS) {
+        await client.query(`
+          INSERT INTO locations (id, name, zone, lat, lng, active, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+          ON CONFLICT (id) DO NOTHING;
+        `, [loc.id, loc.name, loc.zone, loc.lat, loc.lng, loc.active])
+      }
+
       console.log('[Database] PostgreSQL schema verified successfully.')
     } finally {
       client.release()
@@ -185,6 +224,17 @@ async function initSchema() {
         images TEXT,
         locations TEXT,
         description TEXT,
+        createdAt TEXT,
+        updatedAt TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS locations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        zone TEXT DEFAULT 'Other',
+        lat REAL DEFAULT 12.9716,
+        lng REAL DEFAULT 77.5946,
+        active INTEGER DEFAULT 1,
         createdAt TEXT,
         updatedAt TEXT
       );
@@ -241,43 +291,32 @@ async function initSchema() {
         expiresAt INTEGER
       );
     `)
-    console.log('[Database] SQLite schema verified successfully.')
-  }
 
-  // Check if database table is empty and recover from cars_data.json if present
-  try {
-    const existingCars = await appDb.getVehicles()
-    if (existingCars.length === 0) {
-      const candidates = [
-        path.join(__dirname, '..', 'data', 'cars_data.json'),
-        path.join(__dirname, '..', 'cars_data.json'),
-      ]
-      for (const jsonPath of candidates) {
-        if (fs.existsSync(jsonPath)) {
-          try {
-            const raw = fs.readFileSync(jsonPath, 'utf-8')
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              console.log(`[Database] Recovering ${parsed.length} vehicle(s) from ${jsonPath}...`)
-              for (const c of parsed) {
-                if (c && c.brand && c.model) {
-                  await appDb.createVehicle(c, false)
-                }
-              }
-              break
-            }
-          } catch {}
-        }
-      }
-    } else {
-      saveCarsJsonMirror(existingCars)
+    // Seed missing default locations into SQLite
+    const insertStmt = sqliteDb.prepare(`
+      INSERT OR IGNORE INTO locations (id, name, zone, lat, lng, active, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const now = new Date().toISOString()
+    for (const loc of DEFAULT_LOCATIONS) {
+      insertStmt.run(loc.id, loc.name, loc.zone, loc.lat, loc.lng, loc.active ? 1 : 0, now, now)
     }
-  } catch (syncErr) {
-    console.warn('[Database] Startup JSON sync notice:', syncErr.message)
+
+    console.log('[Database] SQLite schema verified successfully.')
   }
 }
 
-// Atomic JSON file mirror writer
+initPromise = initSchema().catch((err) => {
+  console.error('[Database] Schema initialization error:', err)
+})
+
+async function ensureReady() {
+  if (initPromise) {
+    await initPromise
+  }
+}
+
+// Atomic JSON file mirror writer for cars
 function saveCarsJsonMirror(carsList) {
   try {
     const list = Array.isArray(carsList) ? carsList : []
@@ -296,7 +335,24 @@ function saveCarsJsonMirror(carsList) {
   }
 }
 
-
+// Atomic JSON file mirror writer for locations
+function saveLocationsJsonMirror(locationsList) {
+  try {
+    const list = Array.isArray(locationsList) ? locationsList : []
+    const jsonContent = JSON.stringify(list, null, 2)
+    const candidates = [
+      path.join(__dirname, '..', 'data', 'locations_data.json'),
+      path.join(__dirname, '..', 'locations_data.json'),
+    ]
+    for (const jsonPath of candidates) {
+      const dir = path.dirname(jsonPath)
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(jsonPath, jsonContent, 'utf-8')
+    }
+  } catch (err) {
+    console.warn('[Database] Failed to write locations_data.json mirror:', err.message)
+  }
+}
 
 // Helper: Format raw PostgreSQL row to application vehicle object
 function formatPgVehicleRow(row) {
@@ -366,6 +422,36 @@ function formatSqliteVehicleRow(row) {
   }
 }
 
+// Helper: Format PostgreSQL location row
+function formatPgLocationRow(row) {
+  if (!row) return null
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    zone: String(row.zone || 'Other'),
+    lat: row.lat !== null && row.lat !== undefined ? Number(row.lat) : 12.9716,
+    lng: row.lng !== null && row.lng !== undefined ? Number(row.lng) : 77.5946,
+    active: Boolean(row.active),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+  }
+}
+
+// Helper: Format SQLite location row
+function formatSqliteLocationRow(row) {
+  if (!row) return null
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    zone: String(row.zone || 'Other'),
+    lat: row.lat !== null && row.lat !== undefined ? Number(row.lat) : 12.9716,
+    lng: row.lng !== null && row.lng !== undefined ? Number(row.lng) : 77.5946,
+    active: Boolean(row.active),
+    createdAt: String(row.createdAt || new Date().toISOString()),
+    updatedAt: String(row.updatedAt || new Date().toISOString()),
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Database Operations API (Async Universal Interface)
 // ----------------------------------------------------------------------------
@@ -374,6 +460,7 @@ export const appDb = {
 
   // --- VEHICLES ---
   async getVehicles() {
+    await ensureReady()
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('SELECT * FROM vehicles ORDER BY id ASC')
       return res.rows.map(formatPgVehicleRow)
@@ -383,6 +470,7 @@ export const appDb = {
   },
 
   async getVehicleById(id) {
+    await ensureReady()
     const numericId = Number(id)
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('SELECT * FROM vehicles WHERE id = $1', [numericId])
@@ -393,6 +481,7 @@ export const appDb = {
   },
 
   async createVehicle(data) {
+    await ensureReady()
     const brand = String(data.brand || '').trim()
     const model = String(data.model || '').trim()
     const category = String(data.category || 'Hatchback').trim()
@@ -454,6 +543,7 @@ export const appDb = {
   },
 
   async updateVehicle(id, data) {
+    await ensureReady()
     const numericId = Number(id)
     const existing = await this.getVehicleById(numericId)
     if (!existing) return null
@@ -518,6 +608,7 @@ export const appDb = {
   },
 
   async deleteVehicle(id) {
+    await ensureReady()
     const numericId = Number(id)
     const existing = await this.getVehicleById(numericId)
     if (!existing) return null
@@ -532,6 +623,7 @@ export const appDb = {
   },
 
   async deleteAllVehicles() {
+    await ensureReady()
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('DELETE FROM vehicles RETURNING id;')
       saveCarsJsonMirror([])
@@ -548,9 +640,123 @@ export const appDb = {
     return await this.deleteAllVehicles()
   },
 
+  // --- LOCATIONS ---
+  async getLocations() {
+    await ensureReady()
+    if (activeEngine === 'postgres') {
+      const res = await pgPool.query('SELECT * FROM locations ORDER BY name ASC')
+      return res.rows.map(formatPgLocationRow)
+    }
+    const rows = sqliteDb.prepare('SELECT * FROM locations ORDER BY name ASC').all()
+    return rows.map(formatSqliteLocationRow)
+  },
+
+  async getLocationById(id) {
+    await ensureReady()
+    const stringId = String(id)
+    if (activeEngine === 'postgres') {
+      const res = await pgPool.query('SELECT * FROM locations WHERE id = $1', [stringId])
+      return formatPgLocationRow(res.rows[0])
+    }
+    const row = sqliteDb.prepare('SELECT * FROM locations WHERE id = ?').get(stringId)
+    return formatSqliteLocationRow(row)
+  },
+
+  async createLocation(data) {
+    await ensureReady()
+    const trimmedName = String(data.name || '').trim()
+    if (!trimmedName) throw new Error('Location name is required')
+
+    const id = data.id || `loc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+    const zone = String(data.zone || 'Other').trim()
+    const lat = data.lat !== null && data.lat !== undefined && !isNaN(Number(data.lat)) ? Number(data.lat) : 12.9716
+    const lng = data.lng !== null && data.lng !== undefined && !isNaN(Number(data.lng)) ? Number(data.lng) : 77.5946
+    const active = data.active !== undefined ? Boolean(data.active) : true
+    const now = new Date().toISOString()
+
+    if (activeEngine === 'postgres') {
+      const query = `
+        INSERT INTO locations (id, name, zone, lat, lng, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          zone = EXCLUDED.zone,
+          lat = EXCLUDED.lat,
+          lng = EXCLUDED.lng,
+          active = EXCLUDED.active,
+          updated_at = EXCLUDED.updated_at
+        RETURNING *;
+      `
+      const res = await pgPool.query(query, [id, trimmedName, zone, lat, lng, active, now, now])
+      const created = formatPgLocationRow(res.rows[0])
+      saveLocationsJsonMirror(await this.getLocations())
+      return created
+    }
+
+    sqliteDb.prepare(`
+      INSERT OR REPLACE INTO locations (id, name, zone, lat, lng, active, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, trimmedName, zone, lat, lng, active ? 1 : 0, now, now)
+
+    const created = await this.getLocationById(id)
+    saveLocationsJsonMirror(await this.getLocations())
+    return created
+  },
+
+  async updateLocation(id, data) {
+    await ensureReady()
+    const stringId = String(id)
+    const existing = await this.getLocationById(stringId)
+    if (!existing) return null
+
+    const name = data.name !== undefined ? String(data.name).trim() : existing.name
+    const zone = data.zone !== undefined ? String(data.zone).trim() : existing.zone
+    const lat = data.lat !== undefined && data.lat !== null && !isNaN(Number(data.lat)) ? Number(data.lat) : existing.lat
+    const lng = data.lng !== undefined && data.lng !== null && !isNaN(Number(data.lng)) ? Number(data.lng) : existing.lng
+    const active = data.active !== undefined ? Boolean(data.active) : existing.active
+    const now = new Date().toISOString()
+
+    if (activeEngine === 'postgres') {
+      const res = await pgPool.query(`
+        UPDATE locations SET
+          name = $1, zone = $2, lat = $3, lng = $4, active = $5, updated_at = $6
+        WHERE id = $7
+        RETURNING *;
+      `, [name, zone, lat, lng, active, now, stringId])
+      const updated = formatPgLocationRow(res.rows[0])
+      saveLocationsJsonMirror(await this.getLocations())
+      return updated
+    }
+
+    sqliteDb.prepare(`
+      UPDATE locations SET
+        name = ?, zone = ?, lat = ?, lng = ?, active = ?, updatedAt = ?
+      WHERE id = ?
+    `).run(name, zone, lat, lng, active ? 1 : 0, now, stringId)
+
+    const updated = await this.getLocationById(stringId)
+    saveLocationsJsonMirror(await this.getLocations())
+    return updated
+  },
+
+  async deleteLocation(id) {
+    await ensureReady()
+    const stringId = String(id)
+    const existing = await this.getLocationById(stringId)
+    if (!existing) return null
+
+    if (activeEngine === 'postgres') {
+      await pgPool.query('DELETE FROM locations WHERE id = $1', [stringId])
+    } else {
+      sqliteDb.prepare('DELETE FROM locations WHERE id = ?').run(stringId)
+    }
+    saveLocationsJsonMirror(await this.getLocations())
+    return existing
+  },
 
   // --- INQUIRIES ---
   async getInquiries() {
+    await ensureReady()
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('SELECT * FROM inquiries ORDER BY created_at DESC')
       return res.rows.map((r) => ({
@@ -579,6 +785,7 @@ export const appDb = {
   },
 
   async createInquiry(data) {
+    await ensureReady()
     const id = data.id || `inq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
     const name = String(data.name || 'Anonymous').trim()
     const phone = String(data.phone || '').trim()
@@ -640,6 +847,7 @@ export const appDb = {
   },
 
   async updateInquiry(id, data) {
+    await ensureReady()
     const now = new Date().toISOString()
     if (activeEngine === 'postgres') {
       const existingRes = await pgPool.query('SELECT * FROM inquiries WHERE id = $1', [id])
@@ -678,6 +886,7 @@ export const appDb = {
   },
 
   async deleteInquiry(id) {
+    await ensureReady()
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('DELETE FROM inquiries WHERE id = $1 RETURNING *;', [id])
       return res.rows[0] || null
@@ -689,6 +898,7 @@ export const appDb = {
   },
 
   async resetInquiries() {
+    await ensureReady()
     if (activeEngine === 'postgres') {
       await pgPool.query('DELETE FROM inquiries')
     } else {
@@ -699,6 +909,7 @@ export const appDb = {
 
   // --- BOOKINGS ---
   async getBookings() {
+    await ensureReady()
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('SELECT * FROM bookings ORDER BY created_at DESC')
       return res.rows
@@ -707,6 +918,7 @@ export const appDb = {
   },
 
   async createBooking(data) {
+    await ensureReady()
     const id = data.id || data.bookingId || `DRV-BLR-${Date.now().toString().slice(-6)}`
     const bookingId = data.bookingId || id
     const status = data.status || 'CONFIRMED'
@@ -771,6 +983,8 @@ export const appDb = {
 
   // --- SESSIONS ---
   async getSession(token) {
+    await ensureReady()
+    if (!token) return null
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('SELECT * FROM admin_sessions WHERE token = $1', [token])
       if (res.rows.length === 0) return null
@@ -810,6 +1024,7 @@ export const appDb = {
   },
 
   async saveSession(session) {
+    await ensureReady()
     const username = session.user?.username || 'admin'
     const role = session.user?.role || 'admin'
     const name = session.user?.name || 'BLR CRUIZ Admin'
@@ -836,6 +1051,8 @@ export const appDb = {
   },
 
   async deleteSession(token) {
+    await ensureReady()
+    if (!token) return
     if (activeEngine === 'postgres') {
       await pgPool.query('DELETE FROM admin_sessions WHERE token = $1', [token])
     } else {
@@ -844,10 +1061,4 @@ export const appDb = {
   },
 }
 
-// Initialize schema on load
-initSchema().catch((err) => {
-  console.error('[Database] Schema initialization error:', err)
-})
-
 export default appDb
-
