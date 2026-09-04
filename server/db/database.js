@@ -243,12 +243,60 @@ async function initSchema() {
     `)
     console.log('[Database] SQLite schema verified successfully.')
   }
+
+  // Check if database table is empty and recover from cars_data.json if present
+  try {
+    const existingCars = await appDb.getVehicles()
+    if (existingCars.length === 0) {
+      const candidates = [
+        path.join(__dirname, '..', 'data', 'cars_data.json'),
+        path.join(__dirname, '..', 'cars_data.json'),
+      ]
+      for (const jsonPath of candidates) {
+        if (fs.existsSync(jsonPath)) {
+          try {
+            const raw = fs.readFileSync(jsonPath, 'utf-8')
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              console.log(`[Database] Recovering ${parsed.length} vehicle(s) from ${jsonPath}...`)
+              for (const c of parsed) {
+                if (c && c.brand && c.model) {
+                  await appDb.createVehicle(c, false)
+                }
+              }
+              break
+            }
+          } catch {}
+        }
+      }
+    } else {
+      saveCarsJsonMirror(existingCars)
+    }
+  } catch (syncErr) {
+    console.warn('[Database] Startup JSON sync notice:', syncErr.message)
+  }
 }
 
-// Initialize schema on load
-initSchema().catch((err) => {
-  console.error('[Database] Schema initialization error:', err)
-})
+// Atomic JSON file mirror writer
+function saveCarsJsonMirror(carsList) {
+  try {
+    const list = Array.isArray(carsList) ? carsList : []
+    const jsonContent = JSON.stringify(list, null, 2)
+    const candidates = [
+      path.join(__dirname, '..', 'data', 'cars_data.json'),
+      path.join(__dirname, '..', 'cars_data.json'),
+    ]
+    for (const jsonPath of candidates) {
+      const dir = path.dirname(jsonPath)
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(jsonPath, jsonContent, 'utf-8')
+    }
+  } catch (err) {
+    console.warn('[Database] Failed to write cars_data.json mirror:', err.message)
+  }
+}
+
+
 
 // Helper: Format raw PostgreSQL row to application vehicle object
 function formatPgVehicleRow(row) {
@@ -380,7 +428,9 @@ export const appDb = {
         pricePerDay, rating, popular, available, image, JSON.stringify(images),
         JSON.stringify(locations), description, now, now,
       ])
-      return formatPgVehicleRow(res.rows[0])
+      const created = formatPgVehicleRow(res.rows[0])
+      saveCarsJsonMirror(await this.getVehicles())
+      return created
     }
 
     const stmt = sqliteDb.prepare(`
@@ -398,7 +448,9 @@ export const appDb = {
     )
 
     const newId = Number(result.lastInsertRowid)
-    return await this.getVehicleById(newId)
+    const created = await this.getVehicleById(newId)
+    saveCarsJsonMirror(await this.getVehicles())
+    return created
   },
 
   async updateVehicle(id, data) {
@@ -441,7 +493,9 @@ export const appDb = {
         pricePerDay, rating, popular, available, image, JSON.stringify(images),
         JSON.stringify(locations), description, now, numericId,
       ])
-      return formatPgVehicleRow(res.rows[0])
+      const updated = formatPgVehicleRow(res.rows[0])
+      saveCarsJsonMirror(await this.getVehicles())
+      return updated
     }
 
     const stmt = sqliteDb.prepare(`
@@ -458,7 +512,9 @@ export const appDb = {
       JSON.stringify(locations), description, now, numericId
     )
 
-    return await this.getVehicleById(numericId)
+    const updated = await this.getVehicleById(numericId)
+    saveCarsJsonMirror(await this.getVehicles())
+    return updated
   },
 
   async deleteVehicle(id) {
@@ -471,23 +527,27 @@ export const appDb = {
     } else {
       sqliteDb.prepare('DELETE FROM vehicles WHERE id = ?').run(numericId)
     }
+    saveCarsJsonMirror(await this.getVehicles())
     return existing
   },
 
   async deleteAllVehicles() {
     if (activeEngine === 'postgres') {
       const res = await pgPool.query('DELETE FROM vehicles RETURNING id;')
+      saveCarsJsonMirror([])
       return { success: true, deletedCount: res.rowCount }
     }
     const countRow = sqliteDb.prepare('SELECT COUNT(*) as count FROM vehicles').get()
     const deletedCount = countRow ? Number(countRow.count) : 0
     sqliteDb.prepare('DELETE FROM vehicles').run()
+    saveCarsJsonMirror([])
     return { success: true, deletedCount }
   },
 
   async resetVehicles() {
     return await this.deleteAllVehicles()
   },
+
 
   // --- INQUIRIES ---
   async getInquiries() {
@@ -784,4 +844,10 @@ export const appDb = {
   },
 }
 
+// Initialize schema on load
+initSchema().catch((err) => {
+  console.error('[Database] Schema initialization error:', err)
+})
+
 export default appDb
+

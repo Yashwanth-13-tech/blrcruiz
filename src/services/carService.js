@@ -20,79 +20,31 @@ async function ensureDB() {
 
 export const carService = {
   /**
-   * Fetch all cars from the persistent backend database with resilient synchronization
-   * Handles server container restarts/redeployments without losing client or server records.
+   * Fetch all cars directly from the persistent backend database (Single Source of Truth)
    */
   async getCars() {
     await ensureDB()
 
-    let serverCars = null
-
-    // 1. Fetch live fleet from backend API
     try {
       const res = await fetch(apiUrl('/api/cars'))
       if (res.ok) {
         const data = await res.json()
         if (data.success && Array.isArray(data.cars)) {
-          serverCars = data.cars
+          // Synchronize local cache with the authoritative server fleet
+          await resetCarsStore()
+          for (const car of data.cars) {
+            await putInStore('cars', car)
+          }
+          return data.cars.sort((a, b) => Number(a.id) - Number(b.id))
         }
       }
     } catch (err) {
       console.warn('[CarService] Network notice: Using cached cars:', err.message)
     }
 
+    // Offline fallback to local IndexedDB store if network is unavailable
     const localCars = await getAllFromStore('cars')
-    const deletedRecords = await getAllFromStore('deleted_records')
-    const deletedSet = new Set(deletedRecords.map((r) => String(r.id)))
-
-    if (serverCars !== null) {
-      const serverIds = new Set(serverCars.map((c) => String(c.id)))
-
-      // Check if client has valid local cars not present on server (e.g. after ephemeral server restart)
-      const unsyncedLocalCars = localCars.filter(
-        (c) => !serverIds.has(String(c.id)) && !deletedSet.has(String(c.id))
-      )
-
-      if (unsyncedLocalCars.length > 0) {
-        try {
-          const syncRes = await fetch(apiUrl('/api/cars/sync'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cars: unsyncedLocalCars }),
-          })
-          if (syncRes.ok) {
-            const syncData = await syncRes.json()
-            if (syncData.success && Array.isArray(syncData.cars)) {
-              serverCars = syncData.cars
-            }
-          }
-        } catch (syncErr) {
-          console.warn('[CarService] Auto-sync notice:', syncErr.message)
-        }
-      }
-
-      // Sync verified server list to local IndexedDB
-      const updatedServerIds = new Set(serverCars.map((c) => String(c.id)))
-      for (const localCar of localCars) {
-        if (!updatedServerIds.has(String(localCar.id)) && deletedSet.has(String(localCar.id))) {
-          await deleteFromStore('cars', localCar.id)
-        }
-      }
-      for (const car of serverCars) {
-        if (!deletedSet.has(String(car.id))) {
-          await putInStore('cars', car)
-        }
-      }
-
-      return serverCars
-        .filter((c) => !deletedSet.has(String(c.id)))
-        .sort((a, b) => Number(a.id) - Number(b.id))
-    }
-
-    // 2. Offline fallback to local IndexedDB store
-    return localCars
-      .filter((c) => !deletedSet.has(String(c.id)))
-      .sort((a, b) => Number(a.id) - Number(b.id))
+    return localCars.sort((a, b) => Number(a.id) - Number(b.id))
   },
 
   /**
