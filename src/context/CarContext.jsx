@@ -89,6 +89,19 @@ export function CarProvider({ children }) {
     }
   }
 
+  const deleteAllCars = async () => {
+    try {
+      setLoading(true)
+      const res = await carService.deleteAllCars()
+      setCars([])
+      return { success: true, deletedCount: res.deletedCount || 0 }
+    } catch (err) {
+      return { success: false, error: err.message }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const resetCars = async () => {
     try {
       setLoading(true)
@@ -189,6 +202,7 @@ export function CarProvider({ children }) {
         addCar,
         updateCar,
         deleteCar,
+        deleteAllCars,
         toggleAvailability,
         togglePopular,
         resetCars,

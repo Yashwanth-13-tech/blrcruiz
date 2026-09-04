@@ -731,8 +731,72 @@ app.put('/api/cars/:id', async (req, res) => {
 })
 
 /**
+ * DELETE /api/cars/all
+ * Permanently delete ALL vehicles from database (admin protected)
+ */
+app.delete('/api/cars/all', async (req, res) => {
+  const session = await verifyAdminToken(req)
+  if (!session) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  try {
+    const result = await appDb.deleteAllVehicles()
+    console.log(`[Cars DELETE ALL] Deleted all ${result.deletedCount} vehicle(s) from database (${appDb.engine})`)
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully deleted all ${result.deletedCount} vehicles from inventory.`,
+      deletedCount: result.deletedCount,
+      cars: [],
+    })
+  } catch (err) {
+    console.error('[Cars DELETE ALL Error]:', err)
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Failed to delete all vehicles from database.',
+    })
+  }
+})
+
+/**
+ * POST /api/cars/delete-all
+ * Permanently delete ALL vehicles from database (admin protected)
+ */
+app.post('/api/cars/delete-all', async (req, res) => {
+  const session = await verifyAdminToken(req)
+  if (!session) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized. Admin session token required.',
+    })
+  }
+
+  try {
+    const result = await appDb.deleteAllVehicles()
+    console.log(`[Cars DELETE ALL] Deleted all ${result.deletedCount} vehicle(s) from database (${appDb.engine})`)
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully deleted all ${result.deletedCount} vehicles from inventory.`,
+      deletedCount: result.deletedCount,
+      cars: [],
+    })
+  } catch (err) {
+    console.error('[Cars DELETE ALL Error]:', err)
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Failed to delete all vehicles from database.',
+    })
+  }
+})
+
+/**
  * DELETE /api/cars/:id
- * Permanently delete a vehicle from database (admin protected)
+ * Permanently delete a single vehicle from database (admin protected)
  */
 app.delete('/api/cars/:id', async (req, res) => {
   const session = await verifyAdminToken(req)
@@ -748,6 +812,16 @@ app.delete('/api/cars/:id', async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Car ID is required.',
+    })
+  }
+
+  if (id === 'all') {
+    const result = await appDb.deleteAllVehicles()
+    return res.status(200).json({
+      success: true,
+      message: `Successfully deleted all ${result.deletedCount} vehicles from inventory.`,
+      deletedCount: result.deletedCount,
+      cars: [],
     })
   }
 
@@ -782,15 +856,17 @@ app.post('/api/cars/reset', async (req, res) => {
     })
   }
 
-  await appDb.resetVehicles()
+  const result = await appDb.resetVehicles()
   console.log(`[Cars RESET] Reset inventory to 0 vehicles in database (${appDb.engine})`)
 
   return res.status(200).json({
     success: true,
     message: 'Car inventory reset to 0 vehicles in database.',
+    deletedCount: result.deletedCount,
     cars: [],
   })
 })
+
 
 const DIST_DIR = path.resolve(__dirname, '../dist')
 

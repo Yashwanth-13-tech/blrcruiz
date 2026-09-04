@@ -268,33 +268,48 @@ export const carService = {
   },
 
   /**
-   * Reset database back to default 0 cars
+   * Permanently delete all vehicles from backend database and local store
    */
-  async resetToDefaults() {
+  async deleteAllCars() {
     await ensureDB()
     const token = authService.getToken()
 
     try {
-      const res = await fetch(apiUrl('/api/cars/reset'), {
-        method: 'POST',
+      const res = await fetch(apiUrl('/api/cars/all'), {
+        method: 'DELETE',
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success && Array.isArray(data.cars)) {
-          await resetCarsStore()
-          return data.cars
-        }
-      }
-    } catch (err) {
-      console.warn('[CarService] Server reset notice:', err.message)
-    }
 
-    await resetCarsStore()
-    return await this.getCars()
+      if (!res.ok) {
+        let errMessage = `Server returned HTTP ${res.status}`
+        try {
+          const errData = await res.json()
+          if (errData.message) errMessage = errData.message
+        } catch {}
+        if (res.status === 401) {
+          throw new Error('Unauthorized. Please log in again to delete vehicles.')
+        }
+        throw new Error(errMessage)
+      }
+
+      const data = await res.json()
+      await resetCarsStore()
+      return { success: true, deletedCount: data.deletedCount || 0 }
+    } catch (err) {
+      console.error('[CarService] Failed to delete all vehicles:', err)
+      throw err
+    }
+  },
+
+  /**
+   * Reset database back to default 0 cars
+   */
+  async resetToDefaults() {
+    return await this.deleteAllCars()
   },
 }
+
 
 export default carService

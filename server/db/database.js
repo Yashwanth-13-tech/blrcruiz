@@ -474,13 +474,19 @@ export const appDb = {
     return existing
   },
 
-  async resetVehicles() {
+  async deleteAllVehicles() {
     if (activeEngine === 'postgres') {
-      await pgPool.query('DELETE FROM vehicles')
-    } else {
-      sqliteDb.prepare('DELETE FROM vehicles').run()
+      const res = await pgPool.query('DELETE FROM vehicles RETURNING id;')
+      return { success: true, deletedCount: res.rowCount }
     }
-    return []
+    const countRow = sqliteDb.prepare('SELECT COUNT(*) as count FROM vehicles').get()
+    const deletedCount = countRow ? Number(countRow.count) : 0
+    sqliteDb.prepare('DELETE FROM vehicles').run()
+    return { success: true, deletedCount }
+  },
+
+  async resetVehicles() {
+    return await this.deleteAllVehicles()
   },
 
   // --- INQUIRIES ---

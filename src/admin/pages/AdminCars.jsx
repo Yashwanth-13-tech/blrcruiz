@@ -21,11 +21,12 @@ import { useCars } from '../../context/CarContext.jsx'
 import { formatPrice } from '../../utils/pricing.js'
 import CarFormModal from '../components/CarFormModal.jsx'
 import DeleteConfirmModal from '../components/DeleteConfirmModal.jsx'
+import DeleteAllConfirmModal from '../components/DeleteAllConfirmModal.jsx'
 
 const STATUS_OPTIONS = ['All Statuses', 'Available', 'Booked', 'Popular']
 
 export default function AdminCars() {
-  const { cars, addCar, updateCar, deleteCar, toggleAvailability, togglePopular, resetCars, loading, locations, refreshData } = useCars()
+  const { cars, addCar, updateCar, deleteCar, deleteAllCars, toggleAvailability, togglePopular, resetCars, loading, locations, refreshData } = useCars()
 
   useEffect(() => {
     if (typeof refreshData === 'function') {
@@ -49,6 +50,7 @@ export default function AdminCars() {
   const [editingCar, setEditingCar] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [deletingCar, setDeletingCar] = useState(null)
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [notification, setNotification] = useState(null)
 
@@ -130,7 +132,7 @@ export default function AdminCars() {
     }
   }
 
-  // Delete handler
+  // Delete single car handler
   const handleConfirmDelete = async () => {
     if (!deletingCar) return
     setActionLoading(true)
@@ -155,6 +157,29 @@ export default function AdminCars() {
     }
   }
 
+  // Delete all vehicles handler
+  const handleConfirmDeleteAll = async () => {
+    setActionLoading(true)
+    setNotification(null)
+    const res = await deleteAllCars()
+    setActionLoading(false)
+    setShowDeleteAllModal(false)
+
+    if (res.success) {
+      setNotification({
+        type: 'success',
+        message: `All ${res.deletedCount || 0} vehicles were permanently deleted from inventory.`,
+      })
+      setTimeout(() => setNotification(null), 5000)
+    } else {
+      setNotification({
+        type: 'error',
+        message: res.error || 'Failed to delete all vehicles from server.',
+      })
+      setTimeout(() => setNotification(null), 6000)
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header & Main Actions */}
@@ -168,8 +193,21 @@ export default function AdminCars() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {cars.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteAllModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-50/80 px-3.5 py-2.5 text-xs font-bold text-red-600 shadow-xs hover:bg-red-100 hover:border-red-400 hover:text-red-700 transition-all active:scale-95"
+              title="Permanently delete all vehicles from inventory"
+            >
+              <Trash2 size={15} className="shrink-0 text-red-500" />
+              <span>Delete All Vehicles</span>
+            </button>
+          )}
+
           <button
+            type="button"
             onClick={() => setShowAddModal(true)}
             className="btn-accent text-xs !py-2.5 !px-4"
           >
@@ -178,6 +216,7 @@ export default function AdminCars() {
           </button>
         </div>
       </div>
+
 
       {/* Notification Banner */}
       {notification && (
@@ -466,7 +505,7 @@ export default function AdminCars() {
         />
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Single Car Confirmation Modal */}
       {deletingCar && (
         <DeleteConfirmModal
           title={`Delete ${deletingCar.brand} ${deletingCar.model}?`}
@@ -476,6 +515,17 @@ export default function AdminCars() {
           loading={actionLoading}
         />
       )}
+
+      {/* Delete All Vehicles Safety Confirmation Modal */}
+      {showDeleteAllModal && (
+        <DeleteAllConfirmModal
+          carsCount={cars.length}
+          onConfirm={handleConfirmDeleteAll}
+          onCancel={() => setShowDeleteAllModal(false)}
+          loading={actionLoading}
+        />
+      )}
     </div>
   )
 }
+

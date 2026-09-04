@@ -427,6 +427,27 @@ export function razorpayApiPlugin() {
           }
         }
 
+        if ((url === '/api/cars/all' || url === '/api/cars/delete-all') && (req.method === 'DELETE' || req.method === 'POST')) {
+          try {
+            const authHeader = req.headers['authorization'] || ''
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+            const session = token ? await appDb.getSession(token) : null
+            if (!session) {
+              return sendJson(res, 401, { success: false, message: 'Unauthorized. Admin token required.' })
+            }
+
+            const result = await appDb.deleteAllVehicles()
+            return sendJson(res, 200, {
+              success: true,
+              message: `Successfully deleted all ${result.deletedCount} vehicles.`,
+              deletedCount: result.deletedCount,
+              cars: [],
+            })
+          } catch (err) {
+            return sendJson(res, 500, { success: false, message: err.message })
+          }
+        }
+
         if (url.startsWith('/api/cars/') && req.method === 'DELETE') {
           try {
             const authHeader = req.headers['authorization'] || ''
@@ -437,6 +458,16 @@ export function razorpayApiPlugin() {
             }
 
             const id = url.replace('/api/cars/', '')
+            if (id === 'all') {
+              const result = await appDb.deleteAllVehicles()
+              return sendJson(res, 200, {
+                success: true,
+                message: `Successfully deleted all ${result.deletedCount} vehicles.`,
+                deletedCount: result.deletedCount,
+                cars: [],
+              })
+            }
+
             const deleted = await appDb.deleteVehicle(id)
             if (!deleted) {
               return sendJson(res, 404, { success: false, message: 'Vehicle not found or already deleted.' })
